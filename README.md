@@ -1,6 +1,16 @@
-# School ERP React App (Vite + shadcn/ui)
+# School ERP
 
-This is a starter template for a React web application using Vite and shadcn/ui, styled with Tailwind CSS.
+A web-based School ERP built with React and Vite, featuring a modular architecture and Tailwind-based UI components.
+
+Live Demo:
+`https://school-erp-seven-bice.vercel.app/organization`
+
+## Tech Stack
+
+- React
+- Vite
+- Tailwind CSS
+- shadcn/ui
 
 ## Folder Structure
 
@@ -46,6 +56,19 @@ src/
    npm run dev
    ```
 
-## Next Steps
-- Integrate shadcn/ui components
-- Add your modules and business logic
+## Scripts
+
+- `npm run dev` — start the dev server
+- `npm run build` — create a production build
+- `npm run preview` — preview the production build locally
+
+## Deployment
+
+This project is deployed on Vercel. The latest build is available at:
+`https://school-erp-seven-bice.vercel.app/organization`
+
+## Roadmap
+
+- Expand module coverage (attendance, fees, reports)
+- Enhance role-based access and permissions
+- Improve reporting and exports
