@@ -1,0 +1,42 @@
+[
+  {
+    "id": "T-001",
+    "name": "Anita Sharma",
+    "shortName": "A.Sharma",
+    "subject": "Mathematics",
+    "phone": "+91-9000000001",
+    "classes": ["Class 2", "Class 3"]
+  },
+  {
+    "id": "T-002",
+    "name": "Ravi Kumar",
+    "shortName": "R.Kumar",
+    "subject": "Science",
+    "phone": "+91-9000000002",
+    "classes": ["Class 4", "Class 5"]
+  },
+  {
+    "id": "T-003",
+    "name": "Priya Nair",
+    "shortName": "P.Nair",
+    "subject": "English",
+    "phone": "+91-9000000003",
+    "classes": ["Class 1", "Class 2", "Class 3"]
+  },
+  {
+    "id": "T-004",
+    "name": "Suresh Iyer",
+    "shortName": "S.Iyer",
+    "subject": "Social Studies",
+    "phone": "+91-9000000004",
+    "classes": ["Class 6", "Class 7"]
+  },
+  {
+    "id": "T-005",
+    "name": "Meera Joshi",
+    "shortName": "M.Joshi",
+    "subject": "Computer Science",
+    "phone": "+91-9000000005",
+    "classes": ["Class 8", "Class 9", "Class 10"]
+  }
+]

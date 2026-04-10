@@ -1,0 +1,15 @@
+[
+  {"id":"S-001","name":"English","shortName":"ENG","difficulty":6,"availability":30},
+  {"id":"S-002","name":"Hindi","shortName":"HIN","difficulty":5,"availability":28},
+  {"id":"S-003","name":"German","shortName":"GER","difficulty":7,"availability":20},
+  {"id":"S-004","name":"Mathematics","shortName":"MATH","difficulty":9,"availability":35},
+  {"id":"S-005","name":"EVS","shortName":"EVS","difficulty":4,"availability":24},
+  {"id":"S-006","name":"Computer","shortName":"CS","difficulty":6,"availability":22},
+  {"id":"S-007","name":"Physics","shortName":"PHY","difficulty":8,"availability":26},
+  {"id":"S-008","name":"Chemistry","shortName":"CHEM","difficulty":8,"availability":26},
+  {"id":"S-009","name":"Biology","shortName":"BIO","difficulty":7,"availability":25},
+  {"id":"S-010","name":"History","shortName":"HIST","difficulty":6,"availability":24},
+  {"id":"S-011","name":"Civics","shortName":"CIV","difficulty":5,"availability":22},
+  {"id":"S-012","name":"A&C","shortName":"AC","difficulty":4,"availability":18},
+  {"id":"S-013","name":"Physical Education","shortName":"PE","difficulty":3,"availability":20}
+]
