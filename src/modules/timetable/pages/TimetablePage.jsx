@@ -132,9 +132,10 @@ export default function TimetablePage() {
   const handleCellClick = (pi, di) => {
     if (!selectedClass) return;
     if (grid[pi][di].type === "break" || grid[pi][di].type === "holiday") return;
+    const cell = grid[pi][di];
     setDialog({ open: true, pi, di });
-    setAssignSubject("");
-    setAssignTeacher("");
+    setAssignSubject(cell?.subject || "");
+    setAssignTeacher(cell?.teacher || "");
   };
 
   const handleAssign = () => {
@@ -404,7 +405,8 @@ export default function TimetablePage() {
                     return (
                       <td
                         key={di}
-                        className="bg-red-50 border-red-300 border h-20 w-36 align-top p-1.5 relative"
+                        className="bg-red-50 border-red-300 border h-20 w-36 align-top p-1.5 relative cursor-pointer hover:bg-red-100"
+                        onClick={() => handleCellClick(pi, di)}
                       >
                         <div className="absolute top-1 right-1"><AlertTriangle size={12} className="text-red-400" /></div>
                         <div className="text-xs font-semibold text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 inline-block">{cell.subject}</div>
@@ -417,7 +419,8 @@ export default function TimetablePage() {
                     return (
                       <td
                         key={di}
-                        className="bg-yellow-50 border-yellow-300 border h-20 w-36 align-top p-1.5 relative"
+                        className="bg-yellow-50 border-yellow-300 border h-20 w-36 align-top p-1.5 relative cursor-pointer hover:bg-yellow-100"
+                        onClick={() => handleCellClick(pi, di)}
                       >
                         <div className="absolute top-1 right-1 bg-yellow-100 rounded px-1 text-xs text-yellow-700">Proxy</div>
                         <div className="text-xs font-semibold text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 inline-block">{cell.subject}</div>
@@ -430,7 +433,8 @@ export default function TimetablePage() {
                     return (
                       <td
                         key={di}
-                        className="bg-white border border-gray-100 h-20 w-36 align-top p-1.5 relative"
+                        className="bg-white border border-gray-100 h-20 w-36 align-top p-1.5 relative cursor-pointer hover:bg-blue-50 hover:border-blue-200"
+                        onClick={() => handleCellClick(pi, di)}
                       >
                         <div className="text-xs font-semibold text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 inline-block">{cell.subject}</div>
                         <div className="text-xs text-gray-500 mt-1">{cell.teacher}</div>
