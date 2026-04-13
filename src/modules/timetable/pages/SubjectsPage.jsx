@@ -1,4 +1,5 @@
 import React, { useRef, useState } from "react";
+import ClassSubjectsView from "./ClassSubjectsView";
 import {
   Plus,
   Pencil,
@@ -17,6 +18,7 @@ import {
   Languages,
 } from "lucide-react";
 import subjectsData from "@/data/subjects.json";
+import classesData from "@/data/classes.json";
 import { Button } from "@/core/components/Button";
 import { Input } from "@/core/components/Input";
 import { Card } from "@/core/components/Card";
@@ -38,6 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+
 const availabilityOptions = [18, 20, 22, 24, 26, 28, 30, 35, 40];
 
 export default function SubjectsPage() {
@@ -49,6 +52,8 @@ export default function SubjectsPage() {
   const [shortName, setShortName] = useState("");
   const [difficulty, setDifficulty] = useState(5);
   const [availability, setAvailability] = useState(20);
+  const [subjectClasses, setSubjectClasses] = useState([]);
+  const [tab, setTab] = useState("subjects");
   const importRef = useRef(null);
 
   const filtered = subjects.filter((s) =>
@@ -63,6 +68,7 @@ export default function SubjectsPage() {
     setShortName("");
     setDifficulty(5);
     setAvailability(20);
+    setSubjectClasses([]);
     setEditingId(null);
   };
 
@@ -78,6 +84,7 @@ export default function SubjectsPage() {
                 shortName: shortName.trim() || autoShortName(name.trim()),
                 difficulty: Number(difficulty),
                 availability: Number(availability),
+                classes: subjectClasses,
               }
             : s
         )
@@ -89,6 +96,7 @@ export default function SubjectsPage() {
         shortName: shortName.trim() || autoShortName(name.trim()),
         difficulty: Number(difficulty),
         availability: Number(availability),
+        classes: subjectClasses,
       };
       setSubjects((prev) => [next, ...prev]);
     }
@@ -102,6 +110,7 @@ export default function SubjectsPage() {
     setShortName(subject.shortName || "");
     setDifficulty(subject.difficulty ?? 5);
     setAvailability(subject.availability ?? 20);
+    setSubjectClasses(subject.classes || []);
     setIsAddOpen(true);
   };
 
@@ -157,12 +166,24 @@ export default function SubjectsPage() {
 
   return (
     <div>
-      <SectionHeader
-        className="mb-4"
-        title="Subjects"
-        description="Manage subjects and their availability"
-        action={
-          <div className="flex items-center gap-2">
+      <div className="flex gap-2 mb-4">
+        <button
+          className={`px-4 py-2 rounded-t ${tab === "subjects" ? "bg-white border-x border-t border-gray-200 font-semibold" : "bg-gray-100 text-gray-500"}`}
+          onClick={() => setTab("subjects")}
+        >Subjects</button>
+        <button
+          className={`px-4 py-2 rounded-t ${tab === "classview" ? "bg-white border-x border-t border-gray-200 font-semibold" : "bg-gray-100 text-gray-500"}`}
+          onClick={() => setTab("classview")}
+        >Class View</button>
+      </div>
+      {tab === "subjects" ? (
+        <>
+          <SectionHeader
+            className="mb-4"
+            title="Subjects"
+            description="Manage subjects and their availability"
+            action={
+              <div className="flex items-center gap-2">
             <input
               ref={importRef}
               type="file"
@@ -227,6 +248,27 @@ export default function SubjectsPage() {
                         onChange={(e) => setAvailability(e.target.value)}
                       />
                     </div>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Classes Taught In</label>
+                  <div className="flex flex-wrap gap-2">
+                    {classesData.map((c) => (
+                      <label key={c.class} className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={subjectClasses.includes(c.class)}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setSubjectClasses([...subjectClasses, c.class]);
+                            } else {
+                              setSubjectClasses(subjectClasses.filter(cls => cls !== c.class));
+                            }
+                          }}
+                        />
+                        {c.class}
+                      </label>
+                    ))}
                   </div>
                 </div>
                 <DialogFooter>
@@ -335,6 +377,10 @@ export default function SubjectsPage() {
           ) : null}
         </div>
       </Card>
+        </>
+      ) : (
+        <ClassSubjectsView />
+      )}
     </div>
   );
 }

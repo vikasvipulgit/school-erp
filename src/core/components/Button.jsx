@@ -25,12 +25,21 @@ const buttonVariants = cva(
   }
 );
 
-export function Button({ className, variant, size, children, ...props }) {
+export const Button = React.forwardRef(function Button(
+  { className, variant, size, children, ...props },
+  ref
+) {
   return (
-    <button className={cn(buttonVariants({ variant, size }), className)} {...props}>
+    <button
+      ref={ref}
+      className={cn(buttonVariants({ variant, size }), className)}
+      {...props}
+    >
       {children}
     </button>
   );
-}
+});
+
+Button.displayName = "Button";
 
 export { buttonVariants };

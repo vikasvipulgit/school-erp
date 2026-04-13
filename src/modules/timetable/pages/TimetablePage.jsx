@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Plus, AlertTriangle } from "lucide-react";
 // Import shadcn/ui Select and Dialog components
 // (Assume these are available as Select, SelectTrigger, SelectContent, SelectItem, Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogFooter, Button)
@@ -11,12 +11,29 @@ import {
 } from "@/components/ui/select";
 import {
   Dialog,
-  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  getSubjectsForClass,
+  getTeachersForSubject,
+  getInitialGrid,
+  getBookedTeachersForSlot,
+} from "@/modules/timetable/selectors";
+import {
+  SUBJECT_MIN_PERIODS,
+  SUBJECT_MAX_PERIODS,
+  SUBJECT_MAX_PER_DAY,
+  isHolidayDay,
+  getAvailabilityStatus,
+  getUsedPeriodsForSubjectInClassDay,
+  canAssignSubjectForClass,
+  canAssignSubjectForClassDay,
+  getSubjectRuleViolationsForClass,
+} from "@/modules/timetable/rules";
+import { autoAssignForClass } from "@/modules/timetable/autoAssign";
 import classData from "@/data/classes.json";
 import subjectsData from "@/data/subjects.json";
 import teachersData from "@/data/teachers.json";
@@ -27,8 +44,8 @@ const classOptions = classData.flatMap((entry) =>
     label: `${entry.class} - ${section}`,
   }))
 );
-const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const periods = [
+export const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+export const periods = [
   { label: "P1", time: "08:00-08:45" },
   { label: "P2", time: "08:50-09:35" },
   { label: "P3", time: "09:40-10:25" },
@@ -40,23 +57,6 @@ const periods = [
   { label: "P7", time: "13:20-14:05" },
   { label: "P8", time: "14:10-14:55" },
 ];
-const subjects = subjectsData.map((s) => s.name);
-const teachers = teachersData.map((t) => t.name);
-
-function getInitialGrid() {
-  // Mock grid: [periodIdx][dayIdx] = cell
-  // cell: { type: 'empty'|'filled'|'conflict'|'break'|'proxy', ... }
-  return periods.map((period, pi) =>
-    days.map((day, di) => {
-      if (period.break) return { type: "break" };
-      if (pi === 2 && di === 1) return { type: "conflict", subject: "Math", teacher: "Mr. Smith", room: "201" };
-      if (pi === 4 && di === 3) return { type: "proxy", subject: "English", teacher: "Ms. Lee", room: "105" };
-      if (pi === 0 && di === 0) return { type: "filled", subject: "Math", teacher: "Mr. Smith", room: "201" };
-      return { type: "empty" };
-    })
-  );
-}
-
 export default function TimetablePage() {
   const [selectedClass, setSelectedClass] = useState("");
   const [view, setView] = useState("class");
@@ -64,27 +64,125 @@ export default function TimetablePage() {
   const [dialog, setDialog] = useState({ open: false, pi: null, di: null });
   const [assignSubject, setAssignSubject] = useState("");
   const [assignTeacher, setAssignTeacher] = useState("");
+  const [teachers, setTeachers] = useState(teachersData);
+  const publishedRef = useRef(false);
+  const [showNavGuard, setShowNavGuard] = useState(false);
+  const [pendingNav, setPendingNav] = useState(false);
+  const [hasLoadedPrefs, setHasLoadedPrefs] = useState(false);
+
+  // Load timetable from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("erp_timetable");
+    if (saved) {
+      try {
+        setGridsByClass(JSON.parse(saved));
+      } catch {}
+    }
+    // Load teacher assignments from sessionStorage
+    const tSaved = sessionStorage.getItem("erp_teacher_assignments");
+    if (tSaved) {
+      try {
+        setTeachers(JSON.parse(tSaved));
+      } catch {}
+    }
+
+    const prefs = sessionStorage.getItem("erp_timetable_prefs");
+    if (prefs) {
+      try {
+        const parsed = JSON.parse(prefs);
+        if (parsed?.selectedClass) setSelectedClass(parsed.selectedClass);
+        if (parsed?.view) setView(parsed.view);
+      } catch {}
+    }
+    setHasLoadedPrefs(true);
+  }, []);
+
+  // Save timetable to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("erp_timetable", JSON.stringify(gridsByClass));
+  }, [gridsByClass]);
+
+  // Save teacher assignments to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem("erp_teacher_assignments", JSON.stringify(teachers));
+  }, [teachers]);
+
+  useEffect(() => {
+    if (!hasLoadedPrefs) return;
+    sessionStorage.setItem(
+      "erp_timetable_prefs",
+      JSON.stringify({ selectedClass, view })
+    );
+  }, [selectedClass, view, hasLoadedPrefs]);
 
   // Count filled periods
-  const grid = gridsByClass[selectedClass] || getInitialGrid();
+  const grid =
+    gridsByClass[selectedClass] || getInitialGrid({ periods, days, isHolidayDay });
   const filledCount = grid.flat().filter((c) => c.type === "filled" || c.type === "proxy" || c.type === "conflict").length;
-  const totalPeriods = grid.flat().filter((c) => !c.break).length;
+  const totalPeriods = grid.flat().filter((c) => c.type !== "break" && c.type !== "holiday").length;
   const conflictCount = grid.flat().filter((c) => c.type === "conflict").length;
+  const unassignedCount = grid.flat().filter((c) => c.type === "empty").length;
+  const missingTeacherSubjects = selectedClass
+    ? getSubjectsForClass(subjectsData, selectedClass.split("-")[0]).filter(
+        (subject) =>
+          getTeachersForSubject(teachers, subject, selectedClass.split("-")[0]).length === 0
+      )
+    : [];
 
-  const isClassSelected = Boolean(selectedClass);
-
-  // Cell click handler
   const handleCellClick = (pi, di) => {
-    if (!isClassSelected) return;
-    if (grid[pi][di].type === "break") return;
+    if (!selectedClass) return;
+    if (grid[pi][di].type === "break" || grid[pi][di].type === "holiday") return;
     setDialog({ open: true, pi, di });
     setAssignSubject("");
     setAssignTeacher("");
   };
-  // Assign slot
+
   const handleAssign = () => {
+    // Check availability before assignment
+    if (assignSubject && selectedClass) {
+      if (dialog.di === null || dialog.di === undefined) return;
+      const status = getAvailabilityStatus({
+        subjectsData,
+        gridsByClass,
+        selectedClass,
+        subjectName: assignSubject,
+      });
+      if (
+        !canAssignSubjectForClass({
+          subjectsData,
+          gridsByClass,
+          classKey: selectedClass,
+          subjectName: assignSubject,
+        })
+      ) {
+        alert(
+          `Cannot assign ${assignSubject}. Max ${SUBJECT_MAX_PERIODS} periods per class (currently ${status.usedClass}), or global availability limit reached.`
+        );
+        return;
+      }
+      if (
+        !canAssignSubjectForClassDay({
+          gridsByClass,
+          classKey: selectedClass,
+          subjectName: assignSubject,
+          dayIndex: dialog.di,
+        })
+      ) {
+        alert(
+          `Cannot assign ${assignSubject}. Max ${SUBJECT_MAX_PER_DAY} periods per day for a class (already ${getUsedPeriodsForSubjectInClassDay(
+            gridsByClass,
+            selectedClass,
+            assignSubject,
+            dialog.di
+          )}).`
+        );
+        return;
+      }
+    }
+
     setGridsByClass((prev) => {
-      const current = prev[selectedClass] || getInitialGrid();
+      const current =
+        prev[selectedClass] || getInitialGrid({ periods, days, isHolidayDay });
       const next = current.map((row) => [...row]);
       next[dialog.pi][dialog.di] = {
         type: "filled",
@@ -92,21 +190,83 @@ export default function TimetablePage() {
         teacher: assignTeacher,
         room: "101",
       };
+      // Save to localStorage handled by useEffect
       return { ...prev, [selectedClass]: next };
     });
+    // Close dialog and reset form
     setDialog({ open: false, pi: null, di: null });
+    setAssignSubject("");
+    setAssignTeacher("");
   };
 
-  const getBookedTeachersForSlot = (pi, di) => {
-    return Object.entries(gridsByClass).reduce((acc, [cls, g]) => {
-      if (!g || !g[pi] || !g[pi][di]) return acc;
-      const cell = g[pi][di];
-      if (cell && cell.teacher) {
-        acc.add(cell.teacher);
-      }
-      return acc;
-    }, new Set());
+  // Auto-assign handler (page-level)
+  const handleAutoAssign = () => {
+    if (!selectedClass) return;
+    publishedRef.current = false;
+    setGridsByClass((prev) =>
+      autoAssignForClass({
+        selectedClass,
+        gridsByClass: prev,
+        periods,
+        days,
+        subjectsData,
+        teachersData: teachers,
+        isHolidayDay,
+      })
+    );
   };
+
+  // Publish handler
+  const handlePublish = () => {
+    const classKeys = new Set(Object.keys(gridsByClass));
+    if (selectedClass) classKeys.add(selectedClass);
+    const violations = Array.from(classKeys).flatMap((classKey) =>
+      getSubjectRuleViolationsForClass({
+        classKey,
+        gridsByClass,
+        subjectsData,
+        days,
+        getSubjectsForClass,
+        isHolidayDay,
+      })
+    );
+    if (violations.length > 0) {
+      const preview = violations
+        .slice(0, 10)
+        .map((v) =>
+          v.day
+            ? `${v.classKey}: ${v.subject} (${v.used}) on ${v.day}`
+            : `${v.classKey}: ${v.subject} (${v.used})`
+        )
+        .join("\n");
+      const more =
+        violations.length > 10
+          ? `\n...and ${violations.length - 10} more`
+          : "";
+      alert(
+        `Cannot publish. Each subject must have ${SUBJECT_MIN_PERIODS}-${SUBJECT_MAX_PERIODS} periods per class and max ${SUBJECT_MAX_PER_DAY} per day.\n` +
+          preview +
+          more
+      );
+      return;
+    }
+    sessionStorage.setItem("erp_teacher_assignments", JSON.stringify(teachers));
+    publishedRef.current = true;
+    setShowNavGuard(false);
+    setPendingNav(false);
+    alert("Assignments published and saved for this session.");
+  };
+
+  // Confirm navigation handler
+  const confirmNav = () => {
+    setShowNavGuard(false);
+    setPendingNav(false);
+    publishedRef.current = true;
+    window.history.back();
+  };
+
+  // Derived states
+  const isClassSelected = !!selectedClass;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white">
@@ -114,10 +274,10 @@ export default function TimetablePage() {
       <div className="flex gap-3 items-center p-4 border-b border-gray-100">
         {/* Class Select */}
         <Select value={selectedClass} onValueChange={setSelectedClass}>
-          <SelectTrigger className="w-40 bg-white">
+          <SelectTrigger className="w-40 bg-white border border-gray-300 rounded-lg">
             <SelectValue placeholder="Select Class" />
           </SelectTrigger>
-          <SelectContent className="bg-white border border-gray-200 shadow-md">
+          <SelectContent className="bg-white border border-gray-300 shadow-lg rounded-lg">
             {classOptions.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
@@ -148,19 +308,48 @@ export default function TimetablePage() {
             Teacher View
           </button>
         </div>
-        <div className="ml-auto">
-          <button className="bg-emerald-500 text-white rounded-lg px-4 py-2 text-sm font-medium">
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            className="border border-gray-200 text-gray-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50"
+            onClick={handleAutoAssign}
+            disabled={!isClassSelected}
+          >
+            Auto Assign
+          </button>
+          <button 
+            className="bg-emerald-500 text-white rounded-lg px-4 py-2 text-sm font-medium"
+            onClick={handlePublish}
+          >
             Publish Timetable
           </button>
         </div>
       </div>
-      {!isClassSelected ? (
-        <div className="px-4 py-3 text-sm text-gray-500">
-          Select a class to enable timetable editing.
-        </div>
-      ) : null}
       {/* Timetable Grid */}
       <div className={`overflow-x-auto ${!isClassSelected ? "opacity-60 pointer-events-none" : ""}`}>
+        {isClassSelected && (missingTeacherSubjects.length > 0 || unassignedCount > 0) && (
+          <div className="mx-4 mt-4 mb-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {missingTeacherSubjects.length > 0 && (
+              <div>
+                No teacher found for:
+                <span className="ml-2 font-medium">
+                  {missingTeacherSubjects.join(", ")}
+                </span>
+                <div className="mt-1 text-xs text-amber-800">
+                  Reason: No teacher in `teachers.json` is assigned to this subject for the selected class.
+                </div>
+              </div>
+            )}
+            {unassignedCount > 0 && (
+              <div className={missingTeacherSubjects.length > 0 ? "mt-1" : ""}>
+                Unallotted periods remaining:{" "}
+                <span className="font-medium">{unassignedCount}</span>
+                <div className="mt-1 text-xs text-amber-800">
+                  Reason: There are empty slots in the timetable that have not been assigned a subject and teacher yet.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <table className="w-full">
           <thead>
             <tr>
@@ -189,6 +378,18 @@ export default function TimetablePage() {
                 </td>
                 {days.map((day, di) => {
                   const cell = grid[pi][di];
+                  if (cell.type === "holiday") {
+                    return (
+                      <td
+                        key={di}
+                        className="bg-gray-50 cursor-not-allowed border border-gray-100 h-20 w-36 align-top p-1.5 relative"
+                      >
+                        <div className="flex items-center justify-center h-full text-xs text-gray-500 font-medium">
+                          Holiday
+                        </div>
+                      </td>
+                    );
+                  }
                   if (cell.type === "break") {
                     return (
                       <td
@@ -272,48 +473,121 @@ export default function TimetablePage() {
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1">Subject</label>
               <Select value={assignSubject} onValueChange={setAssignSubject}>
-                <SelectTrigger className="w-full bg-white">
+                <SelectTrigger className="w-full bg-white border border-gray-300 rounded-lg">
                   <SelectValue placeholder="Select Subject" />
                 </SelectTrigger>
-                <SelectContent className="bg-white border border-gray-200 shadow-md">
-                {subjects.map((s) => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                <SelectContent className="bg-white border border-gray-300 shadow-lg rounded-lg">
+                  {selectedClass &&
+                    getSubjectsForClass(subjectsData, selectedClass.split("-")[0]).map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {assignSubject && (
+                <div className={`mt-2 text-xs p-2 rounded ${
+                  selectedClass &&
+                  canAssignSubjectForClass({
+                    subjectsData,
+                    gridsByClass,
+                    classKey: selectedClass,
+                    subjectName: assignSubject,
+                  })
+                    ? 'bg-green-50 text-green-700'
+                    : 'bg-red-50 text-red-700'
+                }`}>
+                  {(() => {
+                    const status = getAvailabilityStatus({
+                      subjectsData,
+                      gridsByClass,
+                      selectedClass,
+                      subjectName: assignSubject,
+                    });
+                    const usedDay =
+                      selectedClass && dialog.di !== null
+                        ? getUsedPeriodsForSubjectInClassDay(
+                            gridsByClass,
+                            selectedClass,
+                            assignSubject,
+                            dialog.di
+                          )
+                        : 0;
+                    return `Availability: ${status.used}/${status.available} used (${status.remaining} remaining) • Class: ${status.usedClass}/${SUBJECT_MAX_PERIODS} used • Day: ${usedDay}/${SUBJECT_MAX_PER_DAY}`;
+                  })()}
+                </div>
+              )}
           </div>
             <div className="mb-4">
               <label className="block text-sm font-medium mb-1">Teacher</label>
               <Select value={assignTeacher} onValueChange={setAssignTeacher}>
-                <SelectTrigger className="w-full bg-white">
+                <SelectTrigger className="w-full bg-white border border-gray-300 rounded-lg">
                   <SelectValue placeholder="Select Teacher" />
                 </SelectTrigger>
-                <SelectContent className="bg-white border border-gray-200 shadow-md">
-                  {teachers.map((t) => {
+                <SelectContent className="bg-white border border-gray-300 shadow-lg rounded-lg">
+                  {assignSubject &&
+                    selectedClass &&
+                    getTeachersForSubject(teachers, assignSubject, selectedClass.split("-")[0]).map((t) => {
                     const currentTeacher =
                       dialog.pi !== null && dialog.di !== null
                         ? grid[dialog.pi][dialog.di].teacher
                         : null;
                     const booked =
                       dialog.pi !== null && dialog.di !== null
-                        ? getBookedTeachersForSlot(dialog.pi, dialog.di).has(t) && t !== currentTeacher
+                        ? getBookedTeachersForSlot(gridsByClass, dialog.pi, dialog.di).has(t.name) && t.name !== currentTeacher
                         : false;
                     return (
-                      <SelectItem key={t} value={t} disabled={booked}>
-                        {t}{booked ? " (Booked)" : ""}
+                      <SelectItem key={t.id} value={t.name} disabled={booked}>
+                        {t.name}{booked ? " (Booked)" : ""}
                       </SelectItem>
                     );
                   })}
+                  {assignSubject &&
+                    selectedClass &&
+                    getTeachersForSubject(teachers, assignSubject, selectedClass.split("-")[0]).length === 0 && (
+                    <div className="px-3 py-2 text-gray-400 text-xs">No teacher available for this subject/class</div>
+                  )}
                 </SelectContent>
-            </Select>
+              </Select>
           </div>
           <DialogFooter>
             <button
-              className="bg-emerald-500 text-white rounded-lg px-4 py-2 text-sm font-medium"
+              className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                !assignSubject ||
+                !assignTeacher ||
+                (assignSubject &&
+                  selectedClass &&
+                  !canAssignSubjectForClass({
+                    subjectsData,
+                    gridsByClass,
+                    classKey: selectedClass,
+                    subjectName: assignSubject,
+                  }))
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-emerald-500 text-white hover:bg-emerald-600'
+              }`}
               onClick={handleAssign}
-              disabled={!assignSubject || !assignTeacher}
+              disabled={
+                !assignSubject ||
+                !assignTeacher ||
+                (assignSubject &&
+                  selectedClass &&
+                  !canAssignSubjectForClass({
+                    subjectsData,
+                    gridsByClass,
+                    classKey: selectedClass,
+                    subjectName: assignSubject,
+                  }))
+              }
             >
-              Assign
+              {assignSubject &&
+              selectedClass &&
+              !canAssignSubjectForClass({
+                subjectsData,
+                gridsByClass,
+                classKey: selectedClass,
+                subjectName: assignSubject,
+              })
+                ? 'Limit Reached'
+                : 'Assign'}
             </button>
           </DialogFooter>
         </DialogContent>
