@@ -44,7 +44,7 @@ const classOptions = classData.flatMap((entry) =>
     label: `${entry.class} - ${section}`,
   }))
 );
-export const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+export const days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 export const periods = [
   { label: "P1", time: "08:00-08:45" },
   { label: "P2", time: "08:50-09:35" },
@@ -60,6 +60,7 @@ export const periods = [
 export default function TimetablePage() {
   const [selectedClass, setSelectedClass] = useState("");
   const [view, setView] = useState("class");
+  const [selectedTeacher, setSelectedTeacher] = useState("");
   const [gridsByClass, setGridsByClass] = useState({});
   const [dialog, setDialog] = useState({ open: false, pi: null, di: null });
   const [assignSubject, setAssignSubject] = useState("");
@@ -116,8 +117,133 @@ export default function TimetablePage() {
   }, [selectedClass, view, hasLoadedPrefs]);
 
   // Count filled periods
-  const grid =
+  const subjectColorMap = React.useMemo(() => {
+    const palette = [
+      { bg: "#E0F2FE", border: "#60A5FA", text: "#1E3A8A" },
+      { bg: "#FEF3C7", border: "#F59E0B", text: "#92400E" },
+      { bg: "#DCFCE7", border: "#34D399", text: "#166534" },
+      { bg: "#EDE9FE", border: "#8B5CF6", text: "#4C1D95" },
+      { bg: "#FFE4E6", border: "#F472B6", text: "#9D174D" },
+      { bg: "#F1F5F9", border: "#94A3B8", text: "#334155" },
+      { bg: "#ECFCCB", border: "#84CC16", text: "#3F6212" },
+      { bg: "#FFEDD5", border: "#FB923C", text: "#9A3412" },
+      { bg: "#E0E7FF", border: "#818CF8", text: "#3730A3" },
+      { bg: "#FCE7F3", border: "#F472B6", text: "#9D174D" },
+    ];
+    return subjectsData.reduce((acc, subject, index) => {
+      acc[subject.name] = palette[index % palette.length];
+      return acc;
+    }, {});
+  }, []);
+
+  const getSubjectColors = (subjectName) =>
+    subjectColorMap[subjectName] || { bg: "#F1F5F9", border: "#94A3B8", text: "#334155" };
+
+  const handleDropAssign = (pi, di, payload) => {
+    if (view !== "class") return;
+    if (!selectedClass) return;
+    if (!payload?.subject || !payload?.teacher) return;
+    if (grid[pi][di].type === "break" || grid[pi][di].type === "holiday") return;
+
+    const booked = getBookedTeachersForSlot(gridsByClass, pi, di);
+    const currentTeacher = grid[pi][di]?.teacher;
+    if (booked.has(payload.teacher) && payload.teacher !== currentTeacher) {
+      alert(`${payload.teacher} is already booked for this slot.`);
+      return;
+    }
+
+    if (
+      !canAssignSubjectForClass({
+        subjectsData,
+        gridsByClass,
+        classKey: selectedClass,
+        subjectName: payload.subject,
+      })
+    ) {
+      const status = getAvailabilityStatus({
+        subjectsData,
+        gridsByClass,
+        selectedClass,
+        subjectName: payload.subject,
+      });
+      alert(
+        `Cannot assign ${payload.subject}. Max ${SUBJECT_MAX_PERIODS} periods per class (currently ${status.usedClass}), or global availability limit reached.`
+      );
+      return;
+    }
+
+    if (
+      !canAssignSubjectForClassDay({
+        gridsByClass,
+        classKey: selectedClass,
+        subjectName: payload.subject,
+        dayIndex: di,
+      })
+    ) {
+      alert(
+        `Cannot assign ${payload.subject}. Max ${SUBJECT_MAX_PER_DAY} periods per day for a class.`
+      );
+      return;
+    }
+
+    setGridsByClass((prev) => {
+      const current =
+        prev[selectedClass] || getInitialGrid({ periods, days, isHolidayDay });
+      const next = current.map((row) => [...row]);
+      next[pi][di] = {
+        type: "filled",
+        subject: payload.subject,
+        teacher: payload.teacher,
+        room: "101",
+      };
+      return { ...prev, [selectedClass]: next };
+    });
+  };
+
+  const handleCellClick = (pi, di) => {
+    if (view === "teacher") return;
+    if (!selectedClass) return;
+    if (grid[pi][di].type === "break" || grid[pi][di].type === "holiday") return;
+    const cell = grid[pi][di];
+    setDialog({ open: true, pi, di });
+    setAssignSubject(cell?.subject || "");
+    setAssignTeacher(cell?.teacher || "");
+  };
+
+  const teacherOptions = React.useMemo(
+    () =>
+      teachers.map((t) => ({
+        value: t.name,
+        label: t.name,
+      })),
+    [teachers]
+  );
+
+  const teacherGrid = React.useMemo(() => {
+    if (!selectedTeacher) return getInitialGrid({ periods, days, isHolidayDay });
+    const grid = getInitialGrid({ periods, days, isHolidayDay }).map((row) =>
+      row.map((cell) => ({ ...cell }))
+    );
+
+    Object.entries(gridsByClass).forEach(([classKey, classGrid]) => {
+      if (!classGrid) return;
+      classGrid.forEach((row, pi) => {
+        row.forEach((cell, di) => {
+          if (cell?.teacher === selectedTeacher) {
+            grid[pi][di] = {
+              ...cell,
+              classKey,
+            };
+          }
+        });
+      });
+    });
+    return grid;
+  }, [selectedTeacher, gridsByClass]);
+
+  const classGrid =
     gridsByClass[selectedClass] || getInitialGrid({ periods, days, isHolidayDay });
+  const grid = view === "teacher" ? teacherGrid : classGrid;
   const filledCount = grid.flat().filter((c) => c.type === "filled" || c.type === "proxy" || c.type === "conflict").length;
   const totalPeriods = grid.flat().filter((c) => c.type !== "break" && c.type !== "holiday").length;
   const conflictCount = grid.flat().filter((c) => c.type === "conflict").length;
@@ -128,15 +254,6 @@ export default function TimetablePage() {
           getTeachersForSubject(teachers, subject, selectedClass.split("-")[0]).length === 0
       )
     : [];
-
-  const handleCellClick = (pi, di) => {
-    if (!selectedClass) return;
-    if (grid[pi][di].type === "break" || grid[pi][di].type === "holiday") return;
-    const cell = grid[pi][di];
-    setDialog({ open: true, pi, di });
-    setAssignSubject(cell?.subject || "");
-    setAssignTeacher(cell?.teacher || "");
-  };
 
   const handleAssign = () => {
     // Check availability before assignment
@@ -268,24 +385,40 @@ export default function TimetablePage() {
 
   // Derived states
   const isClassSelected = !!selectedClass;
+  const isTeacherSelected = !!selectedTeacher;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white">
       {/* Toolbar */}
       <div className="flex gap-3 items-center p-4 border-b border-gray-100">
-        {/* Class Select */}
-        <Select value={selectedClass} onValueChange={setSelectedClass}>
-          <SelectTrigger className="w-40 bg-white border border-gray-300 rounded-lg">
-            <SelectValue placeholder="Select Class" />
-          </SelectTrigger>
-          <SelectContent className="bg-white border border-gray-300 shadow-lg rounded-lg">
-            {classOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Class/Teacher Select */}
+        {view === "class" ? (
+          <Select value={selectedClass} onValueChange={setSelectedClass}>
+            <SelectTrigger className="w-40 bg-white border border-gray-300 rounded-lg">
+              <SelectValue placeholder="Select Class" />
+            </SelectTrigger>
+            <SelectContent className="bg-white border border-gray-300 shadow-lg rounded-lg">
+              {classOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Select value={selectedTeacher} onValueChange={setSelectedTeacher}>
+            <SelectTrigger className="w-52 bg-white border border-gray-300 rounded-lg">
+              <SelectValue placeholder="Select Teacher" />
+            </SelectTrigger>
+            <SelectContent className="bg-white border border-gray-300 shadow-lg rounded-lg">
+              {teacherOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         {/* View Toggle */}
         <div className="flex gap-0.5 ml-2">
           <button
@@ -313,7 +446,7 @@ export default function TimetablePage() {
           <button
             className="border border-gray-200 text-gray-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50"
             onClick={handleAutoAssign}
-            disabled={!isClassSelected}
+            disabled={view !== "class" || !isClassSelected}
           >
             Auto Assign
           </button>
@@ -326,9 +459,20 @@ export default function TimetablePage() {
         </div>
       </div>
       {/* Timetable Grid */}
-      <div className={`overflow-x-auto ${!isClassSelected ? "opacity-60 pointer-events-none" : ""}`}>
-        {isClassSelected && (missingTeacherSubjects.length > 0 || unassignedCount > 0) && (
-          <div className="mx-4 mt-4 mb-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <div
+        className={`flex gap-4 ${
+          view === "class"
+            ? !isClassSelected
+              ? "opacity-60 pointer-events-none"
+              : ""
+            : !isTeacherSelected
+              ? "opacity-60 pointer-events-none"
+              : ""
+        }`}
+      >
+        <div className="flex-1 overflow-x-auto">
+          {view === "class" && isClassSelected && (missingTeacherSubjects.length > 0 || unassignedCount > 0) && (
+            <div className="mx-4 mt-4 mb-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             {missingTeacherSubjects.length > 0 && (
               <div>
                 No teacher found for:
@@ -407,6 +551,16 @@ export default function TimetablePage() {
                         key={di}
                         className="bg-red-50 border-red-300 border h-20 w-36 align-top p-1.5 relative cursor-pointer hover:bg-red-100"
                         onClick={() => handleCellClick(pi, di)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          try {
+                            const payload = JSON.parse(
+                              e.dataTransfer.getData("application/json")
+                            );
+                            handleDropAssign(pi, di, payload);
+                          } catch {}
+                        }}
                       >
                         <div className="absolute top-1 right-1"><AlertTriangle size={12} className="text-red-400" /></div>
                         <div className="text-xs font-semibold text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 inline-block">{cell.subject}</div>
@@ -416,29 +570,71 @@ export default function TimetablePage() {
                     );
                   }
                   if (cell.type === "proxy") {
+                    const colors = getSubjectColors(cell.subject);
                     return (
                       <td
                         key={di}
                         className="bg-yellow-50 border-yellow-300 border h-20 w-36 align-top p-1.5 relative cursor-pointer hover:bg-yellow-100"
                         onClick={() => handleCellClick(pi, di)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          try {
+                            const payload = JSON.parse(
+                              e.dataTransfer.getData("application/json")
+                            );
+                            handleDropAssign(pi, di, payload);
+                          } catch {}
+                        }}
                       >
                         <div className="absolute top-1 right-1 bg-yellow-100 rounded px-1 text-xs text-yellow-700">Proxy</div>
-                        <div className="text-xs font-semibold text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 inline-block">{cell.subject}</div>
-                        <div className="text-xs text-gray-500 mt-1">{cell.teacher}</div>
-                        <div className="text-xs text-gray-400">{cell.room}</div>
+                        <div
+                          className="rounded-lg px-2 py-1"
+                          style={{
+                            backgroundColor: colors.bg,
+                            border: `1px solid ${colors.border}`,
+                            color: colors.text,
+                          }}
+                        >
+                          <div className="text-xs font-semibold">{cell.subject}</div>
+                          <div className="text-xs opacity-80 mt-0.5">{cell.teacher}</div>
+                          <div className="text-xs opacity-70">{cell.room}</div>
+                        </div>
                       </td>
                     );
                   }
                   if (cell.type === "filled") {
+                    const colors = getSubjectColors(cell.subject);
                     return (
                       <td
                         key={di}
                         className="bg-white border border-gray-100 h-20 w-36 align-top p-1.5 relative cursor-pointer hover:bg-blue-50 hover:border-blue-200"
                         onClick={() => handleCellClick(pi, di)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          try {
+                            const payload = JSON.parse(
+                              e.dataTransfer.getData("application/json")
+                            );
+                            handleDropAssign(pi, di, payload);
+                          } catch {}
+                        }}
                       >
-                        <div className="text-xs font-semibold text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 inline-block">{cell.subject}</div>
-                        <div className="text-xs text-gray-500 mt-1">{cell.teacher}</div>
-                        <div className="text-xs text-gray-400">{cell.room}</div>
+                        <div
+                          className="rounded-lg px-2 py-1"
+                          style={{
+                            backgroundColor: colors.bg,
+                            border: `1px solid ${colors.border}`,
+                            color: colors.text,
+                          }}
+                        >
+                          <div className="text-xs font-semibold">{cell.subject}</div>
+                          <div className="text-xs opacity-80 mt-0.5">{cell.teacher}</div>
+                          <div className="text-xs opacity-70">
+                            {view === "teacher" && cell.classKey ? cell.classKey : cell.room}
+                          </div>
+                        </div>
                       </td>
                     );
                   }
@@ -448,6 +644,16 @@ export default function TimetablePage() {
                       key={di}
                       className="bg-white border border-gray-100 h-20 w-36 align-top p-1.5 relative cursor-pointer hover:bg-blue-50 hover:border-blue-200"
                       onClick={() => handleCellClick(pi, di)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        try {
+                          const payload = JSON.parse(
+                            e.dataTransfer.getData("application/json")
+                          );
+                          handleDropAssign(pi, di, payload);
+                        } catch {}
+                      }}
                     >
                       <div className="flex items-center justify-center h-full w-full">
                         <Plus size={24} className="text-gray-300 group-hover:opacity-100" />
@@ -459,6 +665,72 @@ export default function TimetablePage() {
             ))}
           </tbody>
         </table>
+        </div>
+
+        {view === "class" && (
+          <div className="w-72 shrink-0">
+            <div className="rounded-xl border border-gray-200 bg-white p-3">
+              <div className="text-xs uppercase tracking-widest text-gray-400 font-semibold">
+                Drag & Drop
+              </div>
+              <div className="text-sm font-semibold text-gray-900 mt-1">
+                Subjects & Teachers
+              </div>
+              <div className="mt-3 space-y-2 max-h-[70vh] overflow-y-auto pr-1">
+                {selectedClass &&
+                  getSubjectsForClass(subjectsData, selectedClass.split("-")[0]).map(
+                    (subject) => {
+                      const teachersForSubject = getTeachersForSubject(
+                        teachers,
+                        subject,
+                        selectedClass.split("-")[0]
+                      );
+                      const colors = getSubjectColors(subject);
+                      if (teachersForSubject.length === 0) {
+                        return (
+                          <div
+                            key={subject}
+                            className="rounded-lg border border-dashed border-gray-200 px-3 py-2 text-xs text-gray-400"
+                          >
+                            {subject} — No teacher
+                          </div>
+                        );
+                      }
+                      return teachersForSubject.map((teacher) => (
+                        <div
+                          key={`${subject}-${teacher.id}`}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData(
+                              "application/json",
+                              JSON.stringify({
+                                subject,
+                                teacher: teacher.name,
+                              })
+                            );
+                          }}
+                          className="rounded-lg border px-3 py-2 text-xs cursor-grab active:cursor-grabbing shadow-sm"
+                          style={{
+                            backgroundColor: colors.bg,
+                            borderColor: colors.border,
+                            color: colors.text,
+                          }}
+                        >
+                          <div className="font-semibold text-sm">{subject}</div>
+                          <div className="text-xs opacity-80">{teacher.name}</div>
+                        </div>
+                      ));
+                    }
+                  )}
+                {!selectedClass && (
+                  <div className="text-xs text-gray-400">
+                    Select a class to see draggable tiles.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       {/* Summary Bar */}
       <div className="flex gap-6 px-4 py-3 border-t border-gray-100 bg-gray-50 rounded-b-xl items-center">

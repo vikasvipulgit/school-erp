@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, Outlet } from "react-router-dom";
 import {
   Building2,
   BookOpen,
@@ -12,6 +12,7 @@ import {
   Settings,
   Languages,
 } from "lucide-react";
+import { authService } from "@/core/services/authService";
 
 const navSections = [
   {
@@ -36,6 +37,28 @@ const navSections = [
 
 export default function AppLayout({ children }) {
   const location = useLocation();
+  const [user, setUser] = React.useState(null);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    const unsubscribe = authService.onAuthChange((currentUser) => {
+      setUser(currentUser || null);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const displayName = user?.displayName || user?.email || "User";
+  const initials = displayName
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  const handleLogout = async () => {
+    await authService.logout();
+    setMenuOpen(false);
+  };
 
   return (
     <div>
@@ -105,18 +128,38 @@ export default function AppLayout({ children }) {
         <div></div>
         <div className="flex items-center gap-6">
           <Languages size={20} className="text-gray-500" />
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-orange-500 flex items-center justify-center text-white font-semibold text-base" style={{fontSize: 18}}>
-              TE
-            </div>
-            <span className="text-gray-900 font-medium">test</span>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              className="flex items-center gap-3"
+            >
+              <div
+                className="w-9 h-9 rounded-full bg-orange-500 flex items-center justify-center text-white font-semibold text-base"
+                style={{ fontSize: 18 }}
+              >
+                {initials}
+              </div>
+              <span className="text-gray-900 font-medium">{displayName}</span>
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-2 w-44 rounded-lg border border-gray-200 bg-white shadow-lg">
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg"
+                >
+                  Logout
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
 
       {/* Main content area */}
       <main className="ml-[260px] mt-[56px] bg-gray-50 min-h-screen p-8">
-        {children}
+        {children ?? <Outlet />}
       </main>
     </div>
   );
