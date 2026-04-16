@@ -13,6 +13,7 @@ import {
   Languages,
 } from "lucide-react";
 import { authService } from "@/core/services/authService";
+import { useAuth } from "@/core/context/AuthContext";
 
 const navSections = [
   {
@@ -37,15 +38,8 @@ const navSections = [
 
 export default function AppLayout({ children }) {
   const location = useLocation();
-  const [user, setUser] = React.useState(null);
+  const { user } = useAuth();
   const [menuOpen, setMenuOpen] = React.useState(false);
-
-  React.useEffect(() => {
-    const unsubscribe = authService.onAuthChange((currentUser) => {
-      setUser(currentUser || null);
-    });
-    return () => unsubscribe();
-  }, []);
 
   const displayName = user?.displayName || user?.email || "User";
   const initials = displayName

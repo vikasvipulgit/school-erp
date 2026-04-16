@@ -9,22 +9,18 @@ import ClassTimeManagement from '../modules/timetable/pages/ClassTimeManagement'
 import TeachersPage from '../modules/timetable/pages/TeachersPage';
 import SubjectsPage from '../modules/timetable/pages/SubjectsPage';
 import LoginPage from '../modules/auth/pages/LoginPage';
-import { authService } from '../core/services/authService';
+import SignupPage from '../modules/auth/pages/SignupPage';
+import { useAuth } from '../core/context/AuthContext';
 
 export default function AppRouter() {
-  const [user, setUser] = React.useState(null);
-  const [loading, setLoading] = React.useState(true);
-
-  React.useEffect(() => {
-    const unsubscribe = authService.onAuthChange((currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
+  const { user, loading } = useAuth();
 
   if (loading) {
-    return null;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
   return (
@@ -33,6 +29,10 @@ export default function AppRouter() {
         <Route
           path="/login"
           element={user ? <Navigate to="/" replace /> : <LoginPage />}
+        />
+        <Route
+          path="/signup"
+          element={user ? <Navigate to="/" replace /> : <SignupPage />}
         />
         <Route
           element={user ? <AppLayout /> : <Navigate to="/login" replace />}

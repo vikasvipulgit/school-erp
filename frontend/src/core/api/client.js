@@ -1,19 +1,24 @@
+import { auth } from '@/lib/firebase';
+
 const DEFAULT_HEADERS = {
   'Content-Type': 'application/json',
 };
 
 /**
  * Base API client using fetch.
- * Keep this small and predictable; extend with interceptors as needed.
+ * Automatically attaches the Firebase ID token as a Bearer token.
  */
 export async function apiRequest(path, options = {}) {
   const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
   const url = `${baseUrl}${path}`;
 
+  const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+
   const config = {
     method: 'GET',
     headers: {
       ...DEFAULT_HEADERS,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {}),
     },
     ...options,
