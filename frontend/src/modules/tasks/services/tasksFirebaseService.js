@@ -59,13 +59,11 @@ export async function getAssignmentsForTask(taskId) {
 
 export async function getAssignmentsForTeacher(teacherId) {
   const snap = await getDocs(
-    query(
-      collection(db, ASSIGNMENTS_COL),
-      where('teacherId', '==', teacherId),
-      orderBy('createdAt', 'desc')
-    )
+    query(collection(db, ASSIGNMENTS_COL), where('teacherId', '==', teacherId))
   );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 }
 
 export async function updateAssignmentStatus(assignmentId, status) {

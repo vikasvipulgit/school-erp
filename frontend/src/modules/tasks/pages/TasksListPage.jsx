@@ -53,7 +53,7 @@ function PriorityBadge({ priority }) {
 
 export default function TasksListPage() {
   const navigate = useNavigate();
-  const { canManageTasks, teacherId, user } = useAuth();
+  const { canManageTasks, teacherId, user, userProfile } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('all');
@@ -63,9 +63,13 @@ export default function TasksListPage() {
 
   const resolveTeacherId = () => {
     if (teacherId) return teacherId;
-    // Fallback: match by email or display name in teachers.json
-    const record = teachersData.find(
-      (t) => t.email === user?.email || t.name === user?.displayName
+    const email = user?.email?.toLowerCase();
+    const displayName = user?.displayName?.toLowerCase();
+    const profileName = userProfile?.name?.toLowerCase();
+    const record = teachersData.find((t) =>
+      (email && t.email.toLowerCase() === email) ||
+      (displayName && t.name.toLowerCase() === displayName) ||
+      (profileName && t.name.toLowerCase() === profileName)
     );
     return record?.id || null;
   };
