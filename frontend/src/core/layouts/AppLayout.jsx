@@ -1,43 +1,57 @@
 import React from "react";
-import { NavLink, useLocation, Outlet } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 import {
+  LayoutDashboard,
   Building2,
   BookOpen,
   Users,
   GraduationCap,
   LayoutGrid,
-  BookMarked,
-  FileText,
   CalendarDays,
-  Settings,
-  Languages,
+  ClipboardList,
+  CalendarOff,
+  BarChart3,
+  ChevronRight,
+  LogOut,
+  UserCircle,
 } from "lucide-react";
 import { authService } from "@/core/services/authService";
 import { useAuth } from "@/core/context/AuthContext";
 
 const navSections = [
   {
-    label: "ORGANIZATION",
+    label: "OVERVIEW",
     items: [
-      { label: "Organization", icon: Building2, path: "/organization" },
+      { label: "Dashboard", icon: LayoutDashboard, path: "/" },
     ],
   },
   {
-    label: "MANAGEMENT",
+    label: "TIMETABLE",
     items: [
+      { label: "Organization", icon: Building2, path: "/organization" },
       { label: "Classes", icon: BookOpen, path: "/class-time" },
       { label: "Teachers", icon: Users, path: "/teachers" },
       { label: "Subjects", icon: GraduationCap, path: "/subjects" },
-      { label: "Rooms", icon: LayoutGrid, active: false },
-      { label: "Lessons", icon: BookMarked, active: false },
-      { label: "Templates", icon: FileText, active: false },
-      { label: "Timetables", icon: CalendarDays, path: "/" },
+      { label: "Rooms", icon: LayoutGrid, path: "/rooms" },
+      { label: "Timetables", icon: CalendarDays, path: "/timetable" },
+    ],
+  },
+  {
+    label: "OPERATIONS",
+    items: [
+      { label: "Tasks", icon: ClipboardList, path: "/tasks" },
+      { label: "Leave", icon: CalendarOff, path: "/leave" },
+    ],
+  },
+  {
+    label: "ANALYTICS",
+    items: [
+      { label: "Reports", icon: BarChart3, path: "/reports" },
     ],
   },
 ];
 
 export default function AppLayout({ children }) {
-  const location = useLocation();
   const { user } = useAuth();
   const [menuOpen, setMenuOpen] = React.useState(false);
 
@@ -57,102 +71,107 @@ export default function AppLayout({ children }) {
   return (
     <div>
       {/* Sidebar */}
-      <aside className="fixed left-0 top-0 h-full w-[260px] bg-white border-r border-gray-200 flex flex-col justify-between z-30">
-        <div>
-          <div className="pt-6 pl-5 pb-8">
-            <span className="font-bold text-xl">School Timetable</span>
-          </div>
-          <nav className="flex flex-col gap-6">
-            {navSections.map((section) => (
-              <div key={section.label}>
-                <div className="px-5 mb-2 text-xs text-gray-400 tracking-widest font-semibold uppercase">
-                  {section.label}
-                </div>
-                <div className="flex flex-col gap-1">
-                  {section.items.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = item.path
-                      ? location.pathname === item.path
-                      : false;
-                    const baseClass =
-                      "flex items-center gap-3 rounded-lg px-3 py-2 w-full";
-                    const activeClass =
-                      "bg-gray-100 font-medium text-gray-900";
-                    const inactiveClass =
-                      "text-sm text-gray-700 hover:bg-gray-50 cursor-pointer";
-                    return (
-                      item.path ? (
-                        <NavLink
-                          key={item.label}
-                          to={item.path}
-                          className={`${baseClass} ${
-                            isActive ? activeClass : inactiveClass
-                          }`}
-                        >
-                          <Icon size={18} className="text-gray-500" />
-                          <span className="text-sm">{item.label}</span>
-                        </NavLink>
-                      ) : (
-                        <div
-                          key={item.label}
-                          className={`${baseClass} text-sm text-gray-400 cursor-not-allowed`}
-                        >
-                          <Icon size={18} className="text-gray-300" />
-                          <span className="text-sm">{item.label}</span>
-                        </div>
-                      )
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </nav>
-        </div>
-        {/* Settings pinned to bottom */}
-        <div className="mb-6 px-3">
-          <div className="flex items-center gap-3 px-3 py-2 w-full text-sm text-gray-700 hover:bg-gray-50 rounded-lg cursor-pointer">
-            <Settings size={18} className="text-gray-500" />
-            <span className="text-sm">Settings</span>
+      <aside className="fixed left-0 top-0 h-full w-[240px] bg-white border-r border-gray-100 flex flex-col z-30">
+        {/* Logo */}
+        <div className="px-5 py-5 border-b border-gray-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center">
+              <GraduationCap size={16} className="text-white" />
+            </div>
+            <div>
+              <div className="font-bold text-gray-900 text-sm leading-tight">School ERP</div>
+              <div className="text-xs text-gray-400">Management System</div>
+            </div>
           </div>
         </div>
-      </aside>
 
-      {/* Top bar */}
-      <header className="fixed left-[260px] top-0 right-0 h-[56px] bg-white border-b border-gray-200 flex items-center justify-between px-6 z-20">
-        <div></div>
-        <div className="flex items-center gap-6">
-          <Languages size={20} className="text-gray-500" />
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-5">
+          {navSections.map((section) => (
+            <div key={section.label}>
+              <div className="px-2 mb-1.5 text-[10px] text-gray-400 tracking-widest font-semibold uppercase">
+                {section.label}
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.label}
+                      to={item.path}
+                      end={item.path === "/"}
+                      className={({ isActive }) =>
+                        `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
+                          isActive
+                            ? "bg-emerald-50 text-emerald-700 font-medium"
+                            : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                        }`
+                      }
+                    >
+                      {({ isActive }) => (
+                        <>
+                          <Icon size={16} className={isActive ? "text-emerald-600" : "text-gray-400"} />
+                          <span>{item.label}</span>
+                        </>
+                      )}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        {/* User footer */}
+        <div className="border-t border-gray-100 px-3 py-3">
           <div className="relative">
             <button
               type="button"
-              onClick={() => setMenuOpen((open) => !open)}
-              className="flex items-center gap-3"
+              onClick={() => setMenuOpen((o) => !o)}
+              className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              <div
-                className="w-9 h-9 rounded-full bg-orange-500 flex items-center justify-center text-white font-semibold text-base"
-                style={{ fontSize: 18 }}
-              >
+              <div className="w-7 h-7 rounded-full bg-orange-500 flex items-center justify-center text-white font-semibold text-xs shrink-0">
                 {initials}
               </div>
-              <span className="text-gray-900 font-medium">{displayName}</span>
+              <div className="flex-1 min-w-0 text-left">
+                <div className="text-sm font-medium text-gray-900 truncate">{displayName}</div>
+              </div>
+              <ChevronRight size={14} className="text-gray-400 shrink-0" />
             </button>
             {menuOpen && (
-              <div className="absolute right-0 mt-2 w-44 rounded-lg border border-gray-200 bg-white shadow-lg">
+              <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden">
+                <NavLink
+                  to="/profile"
+                  onClick={() => setMenuOpen(false)}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  <UserCircle size={14} />
+                  My Profile
+                </NavLink>
+                <div className="border-t border-gray-100" />
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg"
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50"
                 >
+                  <LogOut size={14} />
                   Logout
                 </button>
               </div>
             )}
           </div>
         </div>
+      </aside>
+
+      {/* Top bar */}
+      <header className="fixed left-[240px] top-0 right-0 h-[56px] bg-white border-b border-gray-100 flex items-center px-6 z-20">
+        <div className="flex-1">
+          {/* breadcrumb could go here */}
+        </div>
       </header>
 
-      {/* Main content area */}
-      <main className="ml-[260px] mt-[56px] bg-gray-50 min-h-screen p-8">
+      {/* Main content */}
+      <main className="ml-[240px] mt-[56px] bg-gray-50 min-h-screen p-7">
         {children ?? <Outlet />}
       </main>
     </div>

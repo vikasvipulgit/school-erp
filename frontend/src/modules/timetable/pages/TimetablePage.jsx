@@ -34,16 +34,10 @@ import {
   getSubjectRuleViolationsForClass,
 } from "@/modules/timetable/rules";
 import { autoAssignForClass } from "@/modules/timetable/autoAssign";
-import classData from "@/data/classes.json";
+import { useClasses } from "@/core/context/ClassesContext";
+import { useAuth } from "@/core/context/AuthContext";
 import subjectsData from "@/data/subjects.json";
 import teachersData from "@/data/teachers.json";
-
-const classOptions = classData.flatMap((entry) =>
-  entry.sections.map((section) => ({
-    value: `${entry.class}-${section}`,
-    label: `${entry.class} - ${section}`,
-  }))
-);
 export const days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 export const periods = [
   { label: "P1", time: "08:00-08:45" },
@@ -58,17 +52,24 @@ export const periods = [
   { label: "P8", time: "14:10-14:55" },
 ];
 export default function TimetablePage() {
+  const { classOptions } = useClasses();
+  const { isTeacher, teacherId, user } = useAuth();
+
+  // Resolve the logged-in teacher's record from teachersData
+  const myTeacherRecord = React.useMemo(() => {
+    if (!isTeacher) return null;
+    return teachersData.find(t => t.id === teacherId || t.email === user?.email) || null;
+  }, [isTeacher, teacherId, user?.email]);
+
   const [selectedClass, setSelectedClass] = useState("");
-  const [view, setView] = useState("class");
-  const [selectedTeacher, setSelectedTeacher] = useState("");
+  const [view, setView] = useState(isTeacher ? "teacher" : "class");
+  const [selectedTeacher, setSelectedTeacher] = useState(myTeacherRecord?.name || "");
   const [gridsByClass, setGridsByClass] = useState({});
   const [dialog, setDialog] = useState({ open: false, pi: null, di: null });
   const [assignSubject, setAssignSubject] = useState("");
   const [assignTeacher, setAssignTeacher] = useState("");
   const [teachers, setTeachers] = useState(teachersData);
   const publishedRef = useRef(false);
-  const [showNavGuard, setShowNavGuard] = useState(false);
-  const [pendingNav, setPendingNav] = useState(false);
   const [hasLoadedPrefs, setHasLoadedPrefs] = useState(false);
 
   // Load timetable from localStorage on mount
@@ -85,6 +86,12 @@ export default function TimetablePage() {
       try {
         setTeachers(JSON.parse(tSaved));
       } catch {}
+    }
+
+    // For teachers: always lock to their own teacher view, ignore saved prefs
+    if (isTeacher) {
+      setHasLoadedPrefs(true);
+      return;
     }
 
     const prefs = sessionStorage.getItem("erp_timetable_prefs");
@@ -140,6 +147,7 @@ export default function TimetablePage() {
     subjectColorMap[subjectName] || { bg: "#F1F5F9", border: "#94A3B8", text: "#334155" };
 
   const handleDropAssign = (pi, di, payload) => {
+    if (isTeacher) return;
     if (view !== "class") return;
     if (!selectedClass) return;
     if (!payload?.subject || !payload?.teacher) return;
@@ -201,6 +209,7 @@ export default function TimetablePage() {
   };
 
   const handleCellClick = (pi, di) => {
+    if (isTeacher) return;
     if (view === "teacher") return;
     if (!selectedClass) return;
     if (grid[pi][di].type === "break" || grid[pi][di].type === "holiday") return;
@@ -370,17 +379,7 @@ export default function TimetablePage() {
     }
     sessionStorage.setItem("erp_teacher_assignments", JSON.stringify(teachers));
     publishedRef.current = true;
-    setShowNavGuard(false);
-    setPendingNav(false);
     alert("Assignments published and saved for this session.");
-  };
-
-  // Confirm navigation handler
-  const confirmNav = () => {
-    setShowNavGuard(false);
-    setPendingNav(false);
-    publishedRef.current = true;
-    window.history.back();
   };
 
   // Derived states
@@ -391,8 +390,12 @@ export default function TimetablePage() {
     <div className="rounded-xl border border-gray-200 bg-white">
       {/* Toolbar */}
       <div className="flex gap-3 items-center p-4 border-b border-gray-100">
-        {/* Class/Teacher Select */}
-        {view === "class" ? (
+        {/* Class/Teacher Select — teachers see a static label locked to their own name */}
+        {isTeacher ? (
+          <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 font-medium">
+            {myTeacherRecord?.name || user?.displayName || "My Timetable"}
+          </div>
+        ) : view === "class" ? (
           <Select value={selectedClass} onValueChange={setSelectedClass}>
             <SelectTrigger className="w-40 bg-white border border-gray-300 rounded-lg">
               <SelectValue placeholder="Select Class" />
@@ -419,44 +422,49 @@ export default function TimetablePage() {
             </SelectContent>
           </Select>
         )}
-        {/* View Toggle */}
-        <div className="flex gap-0.5 ml-2">
-          <button
-            className={
-              view === "class"
-                ? "bg-gray-900 text-white rounded-lg px-3 py-1.5 text-sm"
-                : "bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600"
-            }
-            onClick={() => setView("class")}
-          >
-            Class View
-          </button>
-          <button
-            className={
-              view === "teacher"
-                ? "bg-gray-900 text-white rounded-lg px-3 py-1.5 text-sm"
-                : "bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600"
-            }
-            onClick={() => setView("teacher")}
-          >
-            Teacher View
-          </button>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            className="border border-gray-200 text-gray-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50"
-            onClick={handleAutoAssign}
-            disabled={view !== "class" || !isClassSelected}
-          >
-            Auto Assign
-          </button>
-          <button 
-            className="bg-emerald-500 text-white rounded-lg px-4 py-2 text-sm font-medium"
-            onClick={handlePublish}
-          >
-            Publish Timetable
-          </button>
-        </div>
+        {/* View Toggle — hidden for teachers */}
+        {!isTeacher && (
+          <div className="flex gap-0.5 ml-2">
+            <button
+              className={
+                view === "class"
+                  ? "bg-gray-900 text-white rounded-lg px-3 py-1.5 text-sm"
+                  : "bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600"
+              }
+              onClick={() => setView("class")}
+            >
+              Class View
+            </button>
+            <button
+              className={
+                view === "teacher"
+                  ? "bg-gray-900 text-white rounded-lg px-3 py-1.5 text-sm"
+                  : "bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600"
+              }
+              onClick={() => setView("teacher")}
+            >
+              Teacher View
+            </button>
+          </div>
+        )}
+        {/* Auto Assign + Publish — hidden for teachers */}
+        {!isTeacher && (
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              className="border border-gray-200 text-gray-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50"
+              onClick={handleAutoAssign}
+              disabled={view !== "class" || !isClassSelected}
+            >
+              Auto Assign
+            </button>
+            <button
+              className="bg-emerald-500 text-white rounded-lg px-4 py-2 text-sm font-medium"
+              onClick={handlePublish}
+            >
+              Publish Timetable
+            </button>
+          </div>
+        )}
       </div>
       {/* Timetable Grid */}
       <div
@@ -521,7 +529,7 @@ export default function TimetablePage() {
                     </>
                   )}
                 </td>
-                {days.map((day, di) => {
+                {days.map((_day, di) => {
                   const cell = grid[pi][di];
                   if (cell.type === "holiday") {
                     return (
@@ -549,10 +557,11 @@ export default function TimetablePage() {
                     return (
                       <td
                         key={di}
-                        className="bg-red-50 border-red-300 border h-20 w-36 align-top p-1.5 relative cursor-pointer hover:bg-red-100"
-                        onClick={() => handleCellClick(pi, di)}
-                        onDragOver={(e) => e.preventDefault()}
+                        className={`bg-red-50 border-red-300 border h-20 w-36 align-top p-1.5 relative ${isTeacher ? "cursor-default" : "cursor-pointer hover:bg-red-100"}`}
+                        onClick={() => !isTeacher && handleCellClick(pi, di)}
+                        onDragOver={(e) => !isTeacher && e.preventDefault()}
                         onDrop={(e) => {
+                          if (isTeacher) return;
                           e.preventDefault();
                           try {
                             const payload = JSON.parse(
@@ -574,10 +583,11 @@ export default function TimetablePage() {
                     return (
                       <td
                         key={di}
-                        className="bg-yellow-50 border-yellow-300 border h-20 w-36 align-top p-1.5 relative cursor-pointer hover:bg-yellow-100"
-                        onClick={() => handleCellClick(pi, di)}
-                        onDragOver={(e) => e.preventDefault()}
+                        className={`bg-yellow-50 border-yellow-300 border h-20 w-36 align-top p-1.5 relative ${isTeacher ? "cursor-default" : "cursor-pointer hover:bg-yellow-100"}`}
+                        onClick={() => !isTeacher && handleCellClick(pi, di)}
+                        onDragOver={(e) => !isTeacher && e.preventDefault()}
                         onDrop={(e) => {
+                          if (isTeacher) return;
                           e.preventDefault();
                           try {
                             const payload = JSON.parse(
@@ -608,10 +618,11 @@ export default function TimetablePage() {
                     return (
                       <td
                         key={di}
-                        className="bg-white border border-gray-100 h-20 w-36 align-top p-1.5 relative cursor-pointer hover:bg-blue-50 hover:border-blue-200"
-                        onClick={() => handleCellClick(pi, di)}
-                        onDragOver={(e) => e.preventDefault()}
+                        className={`bg-white border border-gray-100 h-20 w-36 align-top p-1.5 relative ${isTeacher ? "cursor-default" : "cursor-pointer hover:bg-blue-50 hover:border-blue-200"}`}
+                        onClick={() => !isTeacher && handleCellClick(pi, di)}
+                        onDragOver={(e) => !isTeacher && e.preventDefault()}
                         onDrop={(e) => {
+                          if (isTeacher) return;
                           e.preventDefault();
                           try {
                             const payload = JSON.parse(
@@ -642,10 +653,11 @@ export default function TimetablePage() {
                   return (
                     <td
                       key={di}
-                      className="bg-white border border-gray-100 h-20 w-36 align-top p-1.5 relative cursor-pointer hover:bg-blue-50 hover:border-blue-200"
-                      onClick={() => handleCellClick(pi, di)}
-                      onDragOver={(e) => e.preventDefault()}
+                      className={`bg-white border border-gray-100 h-20 w-36 align-top p-1.5 relative ${isTeacher ? "cursor-default" : "cursor-pointer hover:bg-blue-50 hover:border-blue-200"}`}
+                      onClick={() => !isTeacher && handleCellClick(pi, di)}
+                      onDragOver={(e) => !isTeacher && e.preventDefault()}
                       onDrop={(e) => {
+                        if (isTeacher) return;
                         e.preventDefault();
                         try {
                           const payload = JSON.parse(
@@ -655,9 +667,11 @@ export default function TimetablePage() {
                         } catch {}
                       }}
                     >
-                      <div className="flex items-center justify-center h-full w-full">
-                        <Plus size={24} className="text-gray-300 group-hover:opacity-100" />
-                      </div>
+                      {!isTeacher && (
+                        <div className="flex items-center justify-center h-full w-full">
+                          <Plus size={24} className="text-gray-300 group-hover:opacity-100" />
+                        </div>
+                      )}
                     </td>
                   );
                 })}
