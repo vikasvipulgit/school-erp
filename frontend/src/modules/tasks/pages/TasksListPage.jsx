@@ -14,16 +14,24 @@ import teachersData from '@/data/teachers.json';
 
 const STATUS_CONFIG = {
   not_started: { label: 'Not Started', cls: 'bg-gray-100 text-gray-600', icon: Clock },
-  in_progress: { label: 'In Progress', cls: 'bg-blue-100 text-blue-700', icon: Clock },
-  completed: { label: 'Completed', cls: 'bg-green-100 text-green-700', icon: CheckCircle2 },
-  overdue: { label: 'Overdue', cls: 'bg-red-100 text-red-700', icon: AlertCircle },
-  cancelled: { label: 'Cancelled', cls: 'bg-gray-100 text-gray-400 line-through', icon: XCircle },
+  in_progress:  { label: 'In Progress',  cls: 'bg-blue-100 text-blue-700',   icon: Clock },
+  completed:    { label: 'Completed',     cls: 'bg-green-100 text-green-700', icon: CheckCircle2 },
+  overdue:      { label: 'Overdue',       cls: 'bg-red-100 text-red-700',     icon: AlertCircle },
+  cancelled:    { label: 'Cancelled',     cls: 'bg-gray-100 text-gray-400 line-through', icon: XCircle },
 };
 
 const PRIORITY_CONFIG = {
-  high: 'bg-red-100 text-red-700',
+  high:   'bg-red-100 text-red-700',
   medium: 'bg-yellow-100 text-yellow-700',
-  low: 'bg-green-100 text-green-700',
+  low:    'bg-green-100 text-green-700',
+};
+
+const STATUS_TRANSITIONS = {
+  not_started: ['in_progress'],
+  in_progress:  ['completed'],
+  completed:    [],
+  overdue:      ['completed'],
+  cancelled:    [],
 };
 
 function StatusBadge({ status }) {
@@ -43,23 +51,24 @@ function PriorityBadge({ priority }) {
   );
 }
 
-const STATUS_TRANSITIONS = {
-  not_started: ['in_progress'],
-  in_progress: ['completed'],
-  completed: [],
-  overdue: ['completed'],
-  cancelled: [],
-};
-
 export default function TasksListPage() {
   const navigate = useNavigate();
-  const { canManageTasks, user } = useAuth();
+  const { canManageTasks, teacherId, user } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterPriority, setFilterPriority] = useState('all');
   const [search, setSearch] = useState('');
   const [updatingId, setUpdatingId] = useState(null);
+
+  const resolveTeacherId = () => {
+    if (teacherId) return teacherId;
+    // Fallback: match by email or display name in teachers.json
+    const record = teachersData.find(
+      (t) => t.email === user?.email || t.name === user?.displayName
+    );
+    return record?.id || null;
+  };
 
   const load = async () => {
     setLoading(true);
@@ -69,14 +78,14 @@ export default function TasksListPage() {
         const all = await getAllAssignmentsWithTasks();
         setItems(all);
       } else {
-        const teacherRecord = teachersData.find(
-          (t) => t.name === user?.displayName || t.email === user?.email
-        );
-        if (teacherRecord) {
-          const mine = await getAssignmentsForTeacher(teacherRecord.id);
+        const tid = resolveTeacherId();
+        if (tid) {
+          const mine = await getAssignmentsForTeacher(tid);
           const tasks = await getTasks();
           const taskMap = Object.fromEntries(tasks.map((t) => [t.id, t]));
           setItems(mine.map((a) => ({ ...a, task: taskMap[a.taskId] || null })));
+        } else {
+          setItems([]);
         }
       }
     } catch (e) {
@@ -85,7 +94,7 @@ export default function TasksListPage() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [canManageTasks]);
+  useEffect(() => { load(); }, [canManageTasks, teacherId]);
 
   const handleStatusChange = async (assignmentId, newStatus) => {
     setUpdatingId(assignmentId);
@@ -117,13 +126,13 @@ export default function TasksListPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Task Management</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {canManageTasks ? 'Assign and monitor teacher tasks' : 'View your assigned tasks'}
+            {canManageTasks ? 'Assign and monitor teacher tasks' : 'View and update your assigned tasks'}
           </p>
         </div>
         {canManageTasks && (
           <button
             onClick={() => navigate('/tasks/create')}
-            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
           >
             <Plus size={16} /> Create Task
           </button>
@@ -146,7 +155,7 @@ export default function TasksListPage() {
               placeholder="Search tasks..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
           <select
@@ -173,12 +182,15 @@ export default function TasksListPage() {
 
         {loading ? (
           <div className="flex items-center justify-center py-16">
-            <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <ClipboardList size={32} className="mx-auto mb-2 opacity-40" />
             <div className="text-sm">No tasks found</div>
+            {!canManageTasks && (
+              <div className="text-xs mt-1 text-gray-300">Tasks assigned to you will appear here</div>
+            )}
           </div>
         ) : (
           <div className="divide-y">
@@ -198,7 +210,7 @@ export default function TasksListPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span
-                        className="font-medium text-gray-900 cursor-pointer hover:text-emerald-700"
+                        className="font-medium text-gray-900 cursor-pointer hover:text-blue-600"
                         onClick={() => navigate(`/tasks/${a.taskId}`)}
                       >
                         {a.task?.title || 'Unknown Task'}
@@ -216,7 +228,7 @@ export default function TasksListPage() {
                     <div className="flex items-center gap-3 mt-2 text-xs text-gray-400 flex-wrap">
                       {canManageTasks && teacher && (
                         <span className="flex items-center gap-1">
-                          <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-semibold">
+                          <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-semibold">
                             {teacher.name[0]}
                           </span>
                           {teacher.name}
@@ -236,7 +248,7 @@ export default function TasksListPage() {
                         disabled={updatingId === a.id}
                         onChange={(e) => handleStatusChange(a.id, e.target.value)}
                         value=""
-                        className="border border-gray-200 rounded px-2 py-1 text-xs text-gray-600 focus:outline-none cursor-pointer"
+                        className="border border-gray-200 rounded px-2 py-1 text-xs text-gray-600 focus:outline-none cursor-pointer disabled:opacity-50"
                       >
                         <option value="" disabled>Update</option>
                         {transitions.map((s) => (

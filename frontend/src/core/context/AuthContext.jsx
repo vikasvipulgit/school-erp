@@ -41,6 +41,8 @@ export function AuthProvider({ children }) {
   const canManageTasks = isAdmin || isPrincipal;
   const canManageTimetable = isAdmin || isCoordinator;
   const canApproveLeave    = isAdmin || isPrincipal;
+  const canViewReports     = !isTeacher;
+  const canManageTimetableSetup = isAdmin || isPrincipal;
 
   return (
     <AuthContext.Provider value={{
@@ -56,6 +58,8 @@ export function AuthProvider({ children }) {
       canManageTasks,
       canManageTimetable,
       canApproveLeave,
+      canViewReports,
+      canManageTimetableSetup,
     }}>
       {children}
     </AuthContext.Provider>

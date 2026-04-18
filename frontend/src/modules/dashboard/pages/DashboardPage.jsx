@@ -59,10 +59,16 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getAllAssignmentsWithTasks(), getLeaveApplications()])
-      .then(([a, l]) => { setAssignments(a); setLeaves(l); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    async function load() {
+      const [a, l] = await Promise.allSettled([
+        getAllAssignmentsWithTasks(),
+        getLeaveApplications(),
+      ]);
+      if (a.status === 'fulfilled') setAssignments(a.value);
+      if (l.status === 'fulfilled') setLeaves(l.value);
+      setLoading(false);
+    }
+    load();
   }, []);
 
   const totalClasses  = classesData.reduce((n, c) => n + c.sections.length, 0);
@@ -155,31 +161,36 @@ function TeacherDashboard() {
 
   useEffect(() => {
     if (!teacher) { setLoading(false); return; }
-    Promise.all([
-      getAssignmentsForTeacher(teacher.id),
-      getLeaveApplicationsForTeacher(teacher.id),
-    ])
-      .then(([a, l]) => { setAssignments(a); setLeaves(l); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    async function load() {
+      const [a, l] = await Promise.allSettled([
+        getAssignmentsForTeacher(teacher.id),
+        getLeaveApplicationsForTeacher(teacher.id),
+      ]);
+      if (a.status === 'fulfilled') setAssignments(a.value);
+      if (l.status === 'fulfilled') setLeaves(l.value);
+      setLoading(false);
+    }
+    load();
   }, [teacher]);
 
-  // Build timetable from localStorage
-  const mySchedule = useMemo(() => {
-    if (!teacher) return [];
+  // Build timetable from localStorage (prefer Firestore-published data via erp_timetable key)
+  const { mySchedule, assignedClasses } = useMemo(() => {
+    if (!teacher) return { mySchedule: [], assignedClasses: [] };
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem('erp_timetable') || '{}'); } catch {}
     const slots = [];
+    const classSet = new Set();
     Object.entries(saved).forEach(([classKey, grid]) => {
       grid?.forEach((row, pi) => {
         row?.forEach((cell, di) => {
           if (cell?.teacher === teacher.name && !periods[pi]?.break) {
             slots.push({ classKey, subject: cell.subject, day: days[di], period: periods[pi]?.label, time: periods[pi]?.time });
+            classSet.add(classKey);
           }
         });
       });
     });
-    return slots;
+    return { mySchedule: slots, assignedClasses: Array.from(classSet) };
   }, [teacher]);
 
   const overdueTasks    = assignments.filter(a => a.status === 'overdue').length;
@@ -188,8 +199,6 @@ function TeacherDashboard() {
   const pendingLeaves   = leaves.filter(l => l.status === 'pending').length;
 
   if (loading) return <Spinner />;
-
-  const classesAssigned = teacher?.classes || [];
 
   return (
     <>
@@ -202,7 +211,7 @@ function TeacherDashboard() {
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={BookOpen}      label="My Classes"       value={classesAssigned.length} color="bg-indigo-500"  sub={classesAssigned.slice(0,2).join(', ') || 'None'} />
+        <StatCard icon={BookOpen} label="My Classes" value={assignedClasses.length} color="bg-indigo-500" sub={assignedClasses.length ? assignedClasses.slice(0,2).join(', ') + (assignedClasses.length > 2 ? '…' : '') : 'Not in timetable yet'} onClick={() => navigate('/timetable')} />
         <StatCard icon={ClipboardList} label="Pending Tasks"    value={pendingTasks}           color="bg-emerald-500" sub={`${overdueTasks} overdue`} onClick={() => navigate('/tasks')} />
         <StatCard icon={CheckCircle2}  label="Completed Tasks"  value={completedTasks}         color="bg-green-500" />
         <StatCard icon={CalendarOff}   label="My Leaves"        value={leaves.length}          color="bg-orange-500"  sub={`${pendingLeaves} pending`} onClick={() => navigate('/leave')} />
@@ -249,12 +258,12 @@ function TeacherDashboard() {
         </SectionCard>
       </div>
 
-      {/* Classes assigned */}
-      {classesAssigned.length > 0 && (
+      {/* Classes in timetable */}
+      {assignedClasses.length > 0 && (
         <div className="mt-6 bg-white rounded-xl border border-gray-200 p-5">
-          <div className="font-semibold text-gray-900 mb-3">My Assigned Classes</div>
+          <div className="font-semibold text-gray-900 mb-3">My Timetable Classes</div>
           <div className="flex flex-wrap gap-2">
-            {classesAssigned.map(cls => (
+            {assignedClasses.map(cls => (
               <span key={cls} className="inline-flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 text-sm font-medium px-3 py-1.5 rounded-lg">
                 <BookMarked size={13} /> {cls}
               </span>

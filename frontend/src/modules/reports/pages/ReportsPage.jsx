@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { BarChart3, Download, Users, BookOpen, CalendarOff, ClipboardList, AlertCircle } from 'lucide-react';
-import { getAllAssignmentsWithTasks, getTasks } from '@/modules/tasks/services/tasksFirebaseService';
-import { getLeaveApplications, getProxyAssignments } from '@/modules/leave/services/leaveFirebaseService';
+import { BarChart3, Users, BookOpen, CalendarOff, ClipboardList } from 'lucide-react';
+import { getAllAssignmentsWithTasks } from '@/modules/tasks/services/tasksFirebaseService';
+import { getLeaveApplications } from '@/modules/leave/services/leaveFirebaseService';
+import { useAuth } from '@/core/context/AuthContext';
+import { Navigate } from 'react-router-dom';
 import teachersData from '@/data/teachers.json';
 import classesData from '@/data/classes.json';
-import { days, periods } from '@/modules/timetable/pages/TimetablePage';
+import { days } from '@/modules/timetable/pages/TimetablePage';
+import { getPeriodsFromSlots } from '@/modules/timetable/periodUtils';
 
 const REPORT_TABS = [
   { id: 'teacher_timetable', label: 'Teacher Timetable', icon: Users },
@@ -14,7 +17,7 @@ const REPORT_TABS = [
   { id: 'workload', label: 'Workload Report', icon: BarChart3 },
 ];
 
-function TeacherTimetableReport() {
+function TeacherTimetableReport({ periods }) {
   const [selectedTeacher, setSelectedTeacher] = useState('');
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem('erp_timetable') || '{}'); } catch {}
@@ -25,14 +28,14 @@ function TeacherTimetableReport() {
     Object.entries(saved).forEach(([classKey, classGrid]) => {
       classGrid?.forEach((row, pi) => {
         row?.forEach((cell, di) => {
-          if (cell?.teacher === selectedTeacher) {
+          if (cell?.teacher === selectedTeacher && base[pi]) {
             base[pi][di] = { ...cell, classKey };
           }
         });
       });
     });
     return base;
-  }, [selectedTeacher]);
+  }, [selectedTeacher, periods]);
 
   return (
     <div>
@@ -42,7 +45,7 @@ function TeacherTimetableReport() {
           <select
             value={selectedTeacher}
             onChange={(e) => setSelectedTeacher(e.target.value)}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
           >
             <option value="">-- Choose Teacher --</option>
             {teachersData.map((t) => (
@@ -93,7 +96,7 @@ function TeacherTimetableReport() {
   );
 }
 
-function ClassTimetableReport() {
+function ClassTimetableReport({ periods }) {
   const classOptions = classesData.flatMap((c) =>
     c.sections.map((s) => ({ value: `${c.class}-${s}`, label: `${c.class} - ${s}` }))
   );
@@ -109,7 +112,7 @@ function ClassTimetableReport() {
         <select
           value={selectedClass}
           onChange={(e) => setSelectedClass(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none max-w-xs w-full"
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 max-w-xs w-full"
         >
           <option value="">-- Choose Class --</option>
           {classOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -136,7 +139,7 @@ function ClassTimetableReport() {
                     return (
                       <td key={di} className="px-4 py-2 text-center">
                         {cell?.type === 'filled' || cell?.type === 'proxy' ? (
-                          <div className={`inline-block rounded px-2 py-1 text-xs ${cell.type === 'proxy' ? 'bg-yellow-50 text-yellow-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                          <div className={`inline-block rounded px-2 py-1 text-xs ${cell.type === 'proxy' ? 'bg-yellow-50 text-yellow-700' : 'bg-blue-50 text-blue-700'}`}>
                             <div className="font-medium">{cell.subject}</div>
                             <div className="opacity-70">{cell.teacher}</div>
                           </div>
@@ -244,7 +247,7 @@ function TaskSummaryReport({ assignments }) {
   );
 }
 
-function WorkloadReport() {
+function WorkloadReport({ periods }) {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem('erp_timetable') || '{}'); } catch {}
 
@@ -263,7 +266,7 @@ function WorkloadReport() {
         });
       });
     });
-    const maxDay = Math.max(...Object.values(byDay));
+    const maxDay = Math.max(0, ...Object.values(byDay));
     return { ...t, total, byDay, maxDay };
   }).sort((a, b) => b.total - a.total);
 
@@ -304,10 +307,17 @@ function WorkloadReport() {
 }
 
 export default function ReportsPage() {
+  const { canViewReports } = useAuth();
+
+  if (!canViewReports) {
+    return <Navigate to="/" replace />;
+  }
+
   const [activeTab, setActiveTab] = useState('teacher_timetable');
   const [assignments, setAssignments] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [periods] = useState(() => getPeriodsFromSlots());
 
   useEffect(() => {
     async function load() {
@@ -337,7 +347,7 @@ export default function ReportsPage() {
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
                 activeTab === tab.id
-                  ? 'bg-gray-900 text-white border-gray-900'
+                  ? 'bg-blue-600 text-white border-blue-600'
                   : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
               }`}
             >
@@ -351,15 +361,15 @@ export default function ReportsPage() {
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
           <>
-            {activeTab === 'teacher_timetable' && <TeacherTimetableReport />}
-            {activeTab === 'class_timetable' && <ClassTimetableReport />}
+            {activeTab === 'teacher_timetable' && <TeacherTimetableReport periods={periods} />}
+            {activeTab === 'class_timetable' && <ClassTimetableReport periods={periods} />}
             {activeTab === 'leave_summary' && <LeaveSummaryReport leaves={leaves} />}
             {activeTab === 'task_summary' && <TaskSummaryReport assignments={assignments} />}
-            {activeTab === 'workload' && <WorkloadReport />}
+            {activeTab === 'workload' && <WorkloadReport periods={periods} />}
           </>
         )}
       </div>
