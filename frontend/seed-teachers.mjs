@@ -7,10 +7,11 @@
 import { readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { requireEnv } from './loadFirebaseEnv.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const API_KEY    = 'AIzaSyB0QAZMBgM3j0k4RjCrpU9eepLXBWFeOwM';
-const PROJECT_ID = 'school-erp-6b4b4';
+const API_KEY = requireEnv('VITE_FIREBASE_API_KEY');
+const PROJECT_ID = requireEnv('VITE_FIREBASE_PROJECT_ID');
 const PASSWORD   = 'Teacher@123';
 
 const teachers = JSON.parse(

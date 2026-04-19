@@ -3,8 +3,10 @@
  * Run: node seed-users.mjs
  */
 
-const API_KEY = 'AIzaSyB0QAZMBgM3j0k4RjCrpU9eepLXBWFeOwM';
-const PROJECT_ID = 'school-erp-6b4b4';
+import { requireEnv } from './loadFirebaseEnv.mjs';
+
+const API_KEY = requireEnv('VITE_FIREBASE_API_KEY');
+const PROJECT_ID = requireEnv('VITE_FIREBASE_PROJECT_ID');
 
 const USERS = [
   {

@@ -3,11 +3,10 @@ import { getFirestore, collection,
          addDoc, serverTimestamp } from 'firebase/firestore'
 import seedData from './firestore-seed.json' assert { type: 'json' }
 
-// Paste your firebase config here
 const firebaseConfig = {
-  apiKey: "AIzaSyB0QAZMBgM3j0k4RjCrpU9eepLXBWFeOwM",
-  authDomain: "school-erp-6b4b4.firebaseapp.com",
-  projectId: "school-erp-6b4b4",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
 }
 
 const app = initializeApp(firebaseConfig)
