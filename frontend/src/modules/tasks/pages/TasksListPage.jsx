@@ -260,7 +260,7 @@ export default function TasksListPage() {
                         ))}
                       </select>
                     )}
-                    {canManageTasks && a.status !== 'cancelled' && a.status !== 'completed' && (
+                    {canManageAllTasks && a.status !== 'cancelled' && a.status !== 'completed' && (
                       <button
                         onClick={() => handleCancel(a.taskId)}
                         className="text-xs text-red-500 hover:text-red-700 px-2 py-1 border border-red-200 rounded hover:bg-red-50"

@@ -42,10 +42,10 @@ function PasswordInput({ label, value, onChange, placeholder }) {
 }
 
 export default function ProfilePage() {
-  const { user, userProfile, teacherId } = useAuth();
+  const { userProfile, teacherId } = useAuth();
 
   const teacher = teachersData.find(
-    t => t.id === teacherId || t.email === user?.email
+    t => t.id === teacherId || t.email === userProfile?.email
   );
 
   // Change password state
@@ -115,11 +115,11 @@ export default function ProfilePage() {
       <div className="bg-white rounded-xl border border-gray-200 p-6 mb-5">
         <div className="flex items-center gap-4 mb-6">
           <div className="w-16 h-16 rounded-full bg-emerald-500 flex items-center justify-center text-white text-2xl font-bold shrink-0">
-            {(user?.displayName || user?.email || 'U')[0].toUpperCase()}
+            {(userProfile?.name || userProfile?.email || 'U')[0].toUpperCase()}
           </div>
           <div>
-            <div className="text-lg font-bold text-gray-900">{user?.displayName || '—'}</div>
-            <div className="text-sm text-gray-500">{user?.email}</div>
+            <div className="text-lg font-bold text-gray-900">{userProfile?.name || '—'}</div>
+            <div className="text-sm text-gray-500">{userProfile?.email}</div>
             <span className={`inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${roleBadgeCls}`}>
               {roleLabel}
             </span>
@@ -127,8 +127,8 @@ export default function ProfilePage() {
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Full Name"  value={user?.displayName} readOnly />
-          <Field label="Email"      value={user?.email}       readOnly />
+          <Field label="Full Name"  value={userProfile?.name}  readOnly />
+          <Field label="Email"      value={userProfile?.email} readOnly />
           <Field label="Role"       value={roleLabel}         readOnly />
           {teacher && <Field label="Subject" value={teacher.subject} readOnly />}
         </div>

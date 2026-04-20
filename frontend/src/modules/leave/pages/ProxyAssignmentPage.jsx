@@ -112,15 +112,12 @@ export default function ProxyAssignmentPage() {
           .filter((ap) => selections[`${ap.date}-${ap.periodIndex}-${ap.dayIndex}`])
           .map((ap) =>
             createProxyAssignment({
-              leaveId,
+              leaveApplicationId: leaveId,
               originalTeacherId: ap.originalTeacherId,
               proxyTeacherId: selections[`${ap.date}-${ap.periodIndex}-${ap.dayIndex}`],
               date: ap.date,
-              classKey: ap.classKey,
-              subject: ap.subject,
-              periodLabel: ap.periodLabel,
-              periodTime: ap.periodTime,
-              assignedBy: user?.uid,
+              classId: ap.classKey,
+              subjectId: ap.subject,
             })
           )
       );

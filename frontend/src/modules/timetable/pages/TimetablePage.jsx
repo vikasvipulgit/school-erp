@@ -20,6 +20,7 @@ import {
   getInitialGrid,
   getBookedTeachersForSlot,
 } from "@/modules/timetable/selectors";
+import { canAssignTeacherForDay } from "@/modules/timetable/rules";
 import {
   SUBJECT_MIN_PERIODS,
   SUBJECT_MAX_PERIODS,
@@ -157,6 +158,7 @@ export default function TimetablePage() {
 
   // Warn on browser close/refresh when there are unpublished changes
   useEffect(() => {
+    if (isTeacher) return;
     const handler = (e) => {
       if (isDirty) {
         e.preventDefault();
@@ -165,11 +167,11 @@ export default function TimetablePage() {
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [isDirty]);
+  }, [isDirty, isTeacher]);
 
   // Intercept NavLink clicks when dirty
   useEffect(() => {
-    if (!isDirty) return;
+    if (isTeacher || !isDirty) return;
     const handleClick = (e) => {
       const anchor = e.target.closest("a");
       if (!anchor) return;
@@ -662,9 +664,14 @@ export default function TimetablePage() {
                     const booked = dialog.pi !== null && dialog.di !== null
                       ? getBookedTeachersForSlot(gridsByClass, dialog.pi, dialog.di).has(t.name) && t.name !== currentTeacher
                       : false;
+                    const dailyLimitReached = dialog.di !== null
+                      ? !canAssignTeacherForDay(gridsByClass, t.name, dialog.di, currentTeacher)
+                      : false;
+                    const disabled = booked || dailyLimitReached;
+                    const suffix = booked ? " (Booked)" : dailyLimitReached ? " (Daily limit reached)" : "";
                     return (
-                      <SelectItem key={t.id} value={t.name} disabled={booked}>
-                        {t.name}{booked ? " (Booked)" : ""}
+                      <SelectItem key={t.id} value={t.name} disabled={disabled}>
+                        {t.name}{suffix}
                       </SelectItem>
                     );
                   })}

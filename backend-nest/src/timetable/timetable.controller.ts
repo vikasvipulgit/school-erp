@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { TimetableService } from './timetable.service';
-import { SaveTimetableDto } from './dto/timetable.dto';
+import { SaveTimetableDto, SaveTimetableSettingsDto } from './dto/timetable.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { MinRole } from '../auth/decorators/min-role.decorator';
@@ -16,6 +16,15 @@ import { Role } from '../common/enums/role.enum';
 @Controller('timetable')
 export class TimetableController {
   constructor(private readonly svc: TimetableService) {}
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Get timetable settings (period slots, working days, rules)' })
+  getSettings() { return this.svc.getSettings(); }
+
+  @Post('settings')
+  @UseGuards(RolesGuard) @MinRole(Role.PRINCIPAL)
+  @ApiOperation({ summary: 'Save timetable settings (principal+)' })
+  saveSettings(@Body() dto: SaveTimetableSettingsDto) { return this.svc.saveSettings(dto); }
 
   @Get()
   @ApiOperation({ summary: 'Get active published timetable' })

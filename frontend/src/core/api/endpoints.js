@@ -81,6 +81,7 @@ export const API_ENDPOINTS = {
     save: '/timetable/save',
     publish: '/timetable/publish',
     publishById: (id) => `/timetable/${id}/publish`,
+    settings: '/timetable/settings',
   },
   attendance: {
     list: '/attendance',

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, CalendarOff, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Plus, CalendarOff, CheckCircle2, XCircle, Clock, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/core/context/AuthContext';
 import {
@@ -40,6 +40,8 @@ export default function LeaveListPage() {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('all');
   const [actionId, setActionId] = useState(null);
+  const [rejectModal, setRejectModal] = useState(null); // leave id being rejected
+  const [rejectReason, setRejectReason] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -67,10 +69,15 @@ export default function LeaveListPage() {
     setActionId(null);
   };
 
-  const handleReject = async (id) => {
-    const remarks = window.prompt('Reason for rejection (optional):') ?? '';
-    setActionId(id);
-    await rejectLeave(id, user?.uid, remarks);
+  const handleReject = (id) => {
+    setRejectReason('');
+    setRejectModal(id);
+  };
+
+  const confirmReject = async () => {
+    setActionId(rejectModal);
+    setRejectModal(null);
+    await rejectLeave(rejectModal, user?.uid, rejectReason.trim());
     await load();
     setActionId(null);
   };
@@ -210,6 +217,38 @@ export default function LeaveListPage() {
           </div>
         )}
       </div>
+      {rejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-2xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-3 mb-3">
+              <AlertCircle size={20} className="text-red-500 shrink-0" />
+              <h3 className="font-semibold text-gray-900">Reject Leave Application</h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-3">Provide a reason for rejection (optional).</p>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={3}
+              placeholder="e.g. Insufficient leave balance, staffing constraints..."
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+            />
+            <div className="flex gap-2 justify-end mt-4">
+              <button
+                onClick={() => setRejectModal(null)}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmReject}
+                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium"
+              >
+                Confirm Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

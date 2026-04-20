@@ -27,8 +27,8 @@ const navSections = [
   {
     label: "TIMETABLE",
     items: [
-      { label: "Organization", icon: Building2, path: "/organization" },
-      { label: "Classes", icon: BookOpen, path: "/class-time" },
+      { label: "Organization", icon: Building2, path: "/organization", hideFromTeacher: true },
+      { label: "Classes", icon: BookOpen, path: "/class-time", hideFromTeacher: true },
       { label: "Teachers", icon: Users, path: "/teachers", hideFromTeacher: true },
       { label: "Subjects", icon: GraduationCap, path: "/subjects", hideFromTeacher: true },
       { label: "Rooms", icon: LayoutGrid, path: "/rooms", hideFromTeacher: true },
@@ -51,11 +51,11 @@ const navSections = [
 ];
 
 export default function AppLayout({ children }) {
-  const { user, isTeacher, role, logout } = useAuth();
+  const { userProfile, isTeacher, role, logout } = useAuth();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const navigate = useNavigate();
 
-  const displayName = user?.displayName || user?.email || "User";
+  const displayName = userProfile?.name || userProfile?.email || "User";
   const initials = displayName
     .split(" ")
     .map((part) => part[0])

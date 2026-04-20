@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Clock,
   Coffee,
@@ -33,6 +33,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useClasses } from "@/core/context/ClassesContext";
+import { loadTimetableSettings, saveTimetableSettings } from "@/modules/timetable/services/timetableFirebaseService";
 
 // ─── Period Slot Management ────────────────────────────────────────────────
 
@@ -55,7 +56,10 @@ function loadSlots() {
     const saved = localStorage.getItem(STORAGE_SLOTS_KEY);
     if (saved) return JSON.parse(saved);
   } catch {}
-  return getDefaultSlots();
+  // Persist defaults immediately so TimetablePage reads the same data
+  const defaults = getDefaultSlots();
+  saveSlots(defaults);
+  return defaults;
 }
 
 function saveSlots(slots) {
@@ -142,7 +146,7 @@ function SortableSlot({ slot, onChange, onDelete }) {
   );
 }
 
-function PeriodSlotManager() {
+function PeriodSlotManager({ onSlotsChange }) {
   const [slots, setSlots] = useState(loadSlots);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [addType, setAddType] = useState("period");

@@ -2,7 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TimetableEntity } from '../database/entities/timetable.entity';
-import { SaveTimetableDto } from './dto/timetable.dto';
+import { TimetableSettingsEntity } from '../database/entities/timetable-settings.entity';
+import { SaveTimetableDto, SaveTimetableSettingsDto } from './dto/timetable.dto';
 
 interface CurrentUser { id: string; }
 
@@ -11,6 +12,8 @@ export class TimetableService {
   constructor(
     @InjectRepository(TimetableEntity)
     private repo: Repository<TimetableEntity>,
+    @InjectRepository(TimetableSettingsEntity)
+    private settingsRepo: Repository<TimetableSettingsEntity>,
   ) {}
 
   async getActive(schoolId = 'school_001') {
@@ -45,6 +48,32 @@ export class TimetableService {
       publishedBy: user.id,
     });
     return this.repo.findOne({ where: { id } });
+  }
+
+  // ─── Settings ─────────────────────────────────────────────────────────────
+
+  async getSettings(schoolId = 'school_001') {
+    return this.settingsRepo.findOne({ where: { schoolId } }) || null;
+  }
+
+  async saveSettings(dto: SaveTimetableSettingsDto) {
+    const schoolId = dto.schoolId || 'school_001';
+    const existing = await this.settingsRepo.findOne({ where: { schoolId } });
+    if (existing) {
+      await this.settingsRepo.update(existing.id, {
+        periodSlots: dto.periodSlots,
+        workingDays: dto.workingDays,
+        rules: dto.rules,
+      });
+      return this.settingsRepo.findOne({ where: { schoolId } });
+    }
+    const entity = this.settingsRepo.create({
+      schoolId,
+      periodSlots: dto.periodSlots,
+      workingDays: dto.workingDays,
+      rules: dto.rules,
+    });
+    return this.settingsRepo.save(entity);
   }
 
   async saveAndPublish(dto: SaveTimetableDto, user: CurrentUser) {

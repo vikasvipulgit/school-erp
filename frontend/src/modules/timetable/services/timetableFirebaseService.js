@@ -20,3 +20,18 @@ export async function loadTimetableFromDb() {
     return null;
   }
 }
+
+export async function loadTimetableSettings() {
+  try {
+    return await apiRequest(API_ENDPOINTS.timetable.settings);
+  } catch {
+    return null;
+  }
+}
+
+export async function saveTimetableSettings(periodSlots, workingDays, rules) {
+  return apiRequest(API_ENDPOINTS.timetable.settings, {
+    method: 'POST',
+    body: JSON.stringify({ periodSlots, workingDays, rules }),
+  });
+}

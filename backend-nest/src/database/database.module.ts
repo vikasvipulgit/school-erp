@@ -12,6 +12,7 @@ import { TaskAssignmentEntity } from './entities/task-assignment.entity';
 import { LeaveApplicationEntity } from './entities/leave-application.entity';
 import { ProxyAssignmentEntity } from './entities/proxy-assignment.entity';
 import { TimetableEntity } from './entities/timetable.entity';
+import { TimetableSettingsEntity } from './entities/timetable-settings.entity';
 import { AttendanceEntity } from './entities/attendance.entity';
 import { FeeEntity } from './entities/fee.entity';
 import { ReportEntity } from './entities/report.entity';
@@ -28,6 +29,7 @@ const ALL_ENTITIES = [
   LeaveApplicationEntity,
   ProxyAssignmentEntity,
   TimetableEntity,
+  TimetableSettingsEntity,
   AttendanceEntity,
   FeeEntity,
   ReportEntity,
