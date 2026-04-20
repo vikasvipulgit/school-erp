@@ -2,20 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { authService } from '@/core/services/authService';
-
-const FIREBASE_ERRORS = {
-  'auth/user-not-found': 'No account found with this email.',
-  'auth/wrong-password': 'Incorrect password.',
-  'auth/invalid-email': 'Please enter a valid email address.',
-  'auth/invalid-credential': 'Invalid email or password.',
-  'auth/too-many-requests': 'Too many failed attempts. Try again later.',
-  'auth/user-disabled': 'This account has been disabled.',
-  'auth/network-request-failed': 'Network error. Check your connection.',
-};
-
-function getErrorMessage(err) {
-  return FIREBASE_ERRORS[err?.code] ?? 'Something went wrong. Please try again.';
-}
+import { useAuth } from '@/core/context/AuthContext';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -24,16 +11,18 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await authService.login(email.trim(), password);
+      const user = await authService.login(email.trim(), password);
+      login(user);
       navigate('/', { replace: true });
     } catch (err) {
-      setError(getErrorMessage(err));
+      setError(err.message || 'Invalid email or password.');
     } finally {
       setLoading(false);
     }

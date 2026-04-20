@@ -1,9 +1,6 @@
-import { apiRequest, API_ENDPOINTS } from '@/core/api';
+import { apiRequest } from '@/core/api/client';
+import { API_ENDPOINTS } from '@/core/api/endpoints';
 
-/**
- * Tasks service layer.
- * Encapsulates API calls for tasks module.
- */
 export function fetchTasksList() {
   return apiRequest(API_ENDPOINTS.tasks.list);
 }

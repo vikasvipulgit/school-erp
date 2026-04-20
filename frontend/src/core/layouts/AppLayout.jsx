@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Building2,
@@ -15,7 +15,6 @@ import {
   LogOut,
   UserCircle,
 } from "lucide-react";
-import { authService } from "@/core/services/authService";
 import { useAuth } from "@/core/context/AuthContext";
 
 const navSections = [
@@ -52,8 +51,9 @@ const navSections = [
 ];
 
 export default function AppLayout({ children }) {
-  const { user, isTeacher, role } = useAuth();
+  const { user, isTeacher, role, logout } = useAuth();
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const navigate = useNavigate();
 
   const displayName = user?.displayName || user?.email || "User";
   const initials = displayName
@@ -64,8 +64,9 @@ export default function AppLayout({ children }) {
     .toUpperCase();
 
   const handleLogout = async () => {
-    await authService.logout();
+    await logout();
     setMenuOpen(false);
+    navigate("/login", { replace: true });
   };
 
   const roleBadge = role ? role.charAt(0).toUpperCase() + role.slice(1) : null;

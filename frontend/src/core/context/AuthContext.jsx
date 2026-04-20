@@ -1,9 +1,13 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { authService } from '@/core/services/authService';
-import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { apiRequest } from '@/core/api/client';
 
 const AuthContext = createContext(null);
+
+const ROLE_LEVEL = {
+  student: 0, parent: 1, teacher: 2,
+  coordinator: 3, principal: 4, admin: 5,
+};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -11,38 +15,46 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = authService.onAuthChange(async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
-          const profile = snap.exists() ? snap.data() : {};
+    const stored = authService.getStoredUser();
+    if (stored) {
+      setUser(stored);
+      setUserProfile(stored);
+      // Refresh profile from API in background to pick up any server-side changes
+      apiRequest('/auth/me')
+        .then((profile) => {
           setUserProfile(profile);
-          setUser(firebaseUser);
-        } catch {
-          setUserProfile({});
-          setUser(firebaseUser);
-        }
-      } else {
-        setUser(null);
-        setUserProfile(null);
-      }
-      setLoading(false);
-    });
-    return () => unsubscribe();
+          localStorage.setItem('user_profile', JSON.stringify(profile));
+        })
+        .catch(() => {});
+    }
+    setLoading(false);
   }, []);
 
-  const role = userProfile?.role || 'teacher';
-  const teacherId = userProfile?.teacherId || null;
+  const login = useCallback((userData) => {
+    setUser(userData);
+    setUserProfile(userData);
+  }, []);
 
-  const isAdmin        = role === 'admin' || role === 'administrator';
-  const isPrincipal    = role === 'principal';
-  const isCoordinator  = role === 'coordinator';
-  const isTeacher      = role === 'teacher';
-  const canManageTasks = isAdmin || isPrincipal;
-  const canManageTimetable = isAdmin || isCoordinator;
-  const canApproveLeave    = isAdmin || isPrincipal;
-  const canViewReports     = !isTeacher;
-  const canManageTimetableSetup = isAdmin || isPrincipal;
+  const logout = useCallback(async () => {
+    await authService.logout();
+    setUser(null);
+    setUserProfile(null);
+  }, []);
+
+  const role = userProfile?.role || user?.role || null;
+  const teacherId = userProfile?.teacherId || user?.teacherId || null;
+  const level = ROLE_LEVEL[role] ?? 0;
+
+  const isAdmin       = role === 'admin';
+  const isPrincipal   = role === 'principal';
+  const isCoordinator = role === 'coordinator';
+  const isTeacher     = role === 'teacher';
+
+  const canManageTasks         = level >= ROLE_LEVEL.teacher;
+  const canManageTimetable     = level >= ROLE_LEVEL.coordinator;
+  const canApproveLeave        = level >= ROLE_LEVEL.coordinator;
+  const canViewReports         = level >= ROLE_LEVEL.teacher;
+  const canManageTimetableSetup = level >= ROLE_LEVEL.admin;
 
   return (
     <AuthContext.Provider value={{
@@ -51,6 +63,8 @@ export function AuthProvider({ children }) {
       role,
       teacherId,
       loading,
+      login,
+      logout,
       isAdmin,
       isPrincipal,
       isCoordinator,

@@ -21,6 +21,7 @@ export default function LeaveApplicationPage() {
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
+  const [submitError, setSubmitError] = useState('');
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -35,6 +36,7 @@ export default function LeaveApplicationPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitError('');
     const errs = validate();
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
 
@@ -42,7 +44,6 @@ export default function LeaveApplicationPage() {
     try {
       await submitLeaveApplication({
         teacherId: teacher?.id || user?.uid,
-        teacherName: user?.displayName || user?.email,
         leaveType,
         startDate,
         endDate,
@@ -51,6 +52,7 @@ export default function LeaveApplicationPage() {
       navigate('/leave');
     } catch (err) {
       console.error(err);
+      setSubmitError(err.message || 'Failed to submit leave application.');
     }
     setSaving(false);
   };
@@ -73,6 +75,11 @@ export default function LeaveApplicationPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+        {submitError && (
+          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+            {submitError}
+          </div>
+        )}
         {teacher && (
           <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-4 py-3">
             <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-semibold text-sm">

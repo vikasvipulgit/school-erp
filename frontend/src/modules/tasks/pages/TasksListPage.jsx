@@ -3,7 +3,6 @@ import { Plus, Search, AlertCircle, Clock, CheckCircle2, XCircle, ClipboardList 
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/core/context/AuthContext';
 import {
-  getTasks,
   getAllAssignmentsWithTasks,
   getAssignmentsForTeacher,
   updateAssignmentStatus,
@@ -53,7 +52,8 @@ function PriorityBadge({ priority }) {
 
 export default function TasksListPage() {
   const navigate = useNavigate();
-  const { canManageTasks, teacherId, user, userProfile } = useAuth();
+  const { role, teacherId, user, userProfile } = useAuth();
+  const canManageAllTasks = ['admin', 'principal', 'coordinator'].includes(role);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('all');
@@ -77,17 +77,17 @@ export default function TasksListPage() {
   const load = async () => {
     setLoading(true);
     try {
-      await checkAndMarkOverdueTasks();
-      if (canManageTasks) {
+      if (role === 'admin') {
+        await checkAndMarkOverdueTasks();
+      }
+      if (canManageAllTasks) {
         const all = await getAllAssignmentsWithTasks();
         setItems(all);
       } else {
         const tid = resolveTeacherId();
         if (tid) {
           const mine = await getAssignmentsForTeacher(tid);
-          const tasks = await getTasks();
-          const taskMap = Object.fromEntries(tasks.map((t) => [t.id, t]));
-          setItems(mine.map((a) => ({ ...a, task: taskMap[a.taskId] || null })));
+          setItems(mine);
         } else {
           setItems([]);
         }
@@ -98,7 +98,7 @@ export default function TasksListPage() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [canManageTasks, teacherId]);
+  useEffect(() => { load(); }, [canManageAllTasks, teacherId, role]);
 
   const handleStatusChange = async (assignmentId, newStatus) => {
     setUpdatingId(assignmentId);
@@ -130,10 +130,10 @@ export default function TasksListPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Task Management</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {canManageTasks ? 'Assign and monitor teacher tasks' : 'View and update your assigned tasks'}
+            {canManageAllTasks ? 'Assign and monitor teacher tasks' : 'View and update your assigned tasks'}
           </p>
         </div>
-        {canManageTasks && (
+        {canManageAllTasks && (
           <button
             onClick={() => navigate('/tasks/create')}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
@@ -192,7 +192,7 @@ export default function TasksListPage() {
           <div className="text-center py-16 text-gray-400">
             <ClipboardList size={32} className="mx-auto mb-2 opacity-40" />
             <div className="text-sm">No tasks found</div>
-            {!canManageTasks && (
+            {!canManageAllTasks && (
               <div className="text-xs mt-1 text-gray-300">Tasks assigned to you will appear here</div>
             )}
           </div>
@@ -230,7 +230,7 @@ export default function TasksListPage() {
                       {a.task?.description}
                     </div>
                     <div className="flex items-center gap-3 mt-2 text-xs text-gray-400 flex-wrap">
-                      {canManageTasks && teacher && (
+                      {canManageAllTasks && teacher && (
                         <span className="flex items-center gap-1">
                           <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-semibold">
                             {teacher.name[0]}

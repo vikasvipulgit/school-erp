@@ -2,18 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, CheckCircle2, XCircle } from 'lucide-react';
 import { authService } from '@/core/services/authService';
-
-// ─── Firebase error map ───────────────────────────────────────────────────────
-const FIREBASE_ERRORS = {
-  'auth/email-already-in-use': 'An account with this email already exists.',
-  'auth/invalid-email': 'Please enter a valid email address.',
-  'auth/weak-password': 'Password must be at least 6 characters.',
-  'auth/network-request-failed': 'Network error. Check your connection.',
-};
-
-function getFirebaseError(err) {
-  return FIREBASE_ERRORS[err?.code] ?? 'Something went wrong. Please try again.';
-}
+import { useAuth } from '@/core/context/AuthContext';
 
 // ─── Validation rules ─────────────────────────────────────────────────────────
 const ROLES = ['student', 'parent', 'teacher', 'admin'];
@@ -82,6 +71,7 @@ function FieldError({ msg }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function SignupPage() {
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const [form, setForm] = useState({ name: '', email: '', role: '', password: '', confirm: '' });
   const [errors, setErrors] = useState({});
@@ -116,10 +106,11 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
-      await authService.signup(form.name.trim(), form.email.trim(), form.password, form.role);
+      const user = await authService.signup(form.name.trim(), form.email.trim(), form.password, form.role);
+      login(user);
       navigate('/', { replace: true });
     } catch (err) {
-      setSubmitError(getFirebaseError(err));
+      setSubmitError(err.message || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }

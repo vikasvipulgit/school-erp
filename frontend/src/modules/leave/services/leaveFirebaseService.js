@@ -1,88 +1,54 @@
-import { db } from '@/lib/firebase';
-import {
-  collection,
-  doc,
-  addDoc,
-  updateDoc,
-  getDocs,
-  query,
-  where,
-  serverTimestamp,
-} from 'firebase/firestore';
-
-const LEAVE_COL = 'leaveApplications';
-const PROXY_COL = 'proxyAssignments';
+/**
+ * Leave service — replaced Firebase with REST API calls.
+ * Function signatures preserved so existing callers need no changes.
+ */
+import { apiRequest } from '@/core/api/client';
+import { API_ENDPOINTS } from '@/core/api/endpoints';
 
 export async function submitLeaveApplication(data) {
-  const ref = await addDoc(collection(db, LEAVE_COL), {
-    ...data,
-    status: 'pending',
-    submittedAt: serverTimestamp(),
+  const result = await apiRequest(API_ENDPOINTS.leave.submit, {
+    method: 'POST',
+    body: JSON.stringify(data),
   });
-  return ref.id;
+  return result.id;
 }
 
 export async function getLeaveApplications() {
-  const snap = await getDocs(collection(db, LEAVE_COL));
-  return snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+  return apiRequest(API_ENDPOINTS.leave.list);
 }
 
-export async function getLeaveApplicationsForTeacher(teacherId) {
-  const snap = await getDocs(
-    query(collection(db, LEAVE_COL), where('teacherId', '==', teacherId))
-  );
-  return snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+export async function getLeaveApplicationsForTeacher(_teacherId) {
+  // Backend filters by JWT — param ignored
+  return apiRequest(API_ENDPOINTS.leave.list);
 }
 
 export async function approveLeave(leaveId, approvedBy) {
-  await updateDoc(doc(db, LEAVE_COL, leaveId), {
-    status: 'approved',
-    approvedBy,
-    approvedAt: serverTimestamp(),
-  });
+  return apiRequest(API_ENDPOINTS.leave.approve(leaveId), { method: 'PATCH' });
 }
 
 export async function rejectLeave(leaveId, approvedBy, remarks) {
-  await updateDoc(doc(db, LEAVE_COL, leaveId), {
-    status: 'rejected',
-    approvedBy,
-    remarks,
-    approvedAt: serverTimestamp(),
+  return apiRequest(API_ENDPOINTS.leave.reject(leaveId), {
+    method: 'PATCH',
+    body: JSON.stringify({ remarks }),
   });
 }
 
 export async function createProxyAssignment(data) {
-  const ref = await addDoc(collection(db, PROXY_COL), {
-    ...data,
-    status: 'pending',
-    createdAt: serverTimestamp(),
+  const result = await apiRequest(API_ENDPOINTS.leave.proxy.create, {
+    method: 'POST',
+    body: JSON.stringify(data),
   });
-  return ref.id;
+  return result.id;
 }
 
 export async function getProxyAssignments() {
-  const snap = await getDocs(
-    query(collection(db, PROXY_COL), orderBy('createdAt', 'desc'))
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return apiRequest(API_ENDPOINTS.leave.proxy.list);
 }
 
 export async function approveProxy(proxyId, approvedBy) {
-  await updateDoc(doc(db, PROXY_COL, proxyId), {
-    status: 'approved',
-    approvedBy,
-    approvedAt: serverTimestamp(),
-  });
+  return apiRequest(API_ENDPOINTS.leave.proxy.approve(proxyId), { method: 'PATCH' });
 }
 
 export async function rejectProxy(proxyId, approvedBy) {
-  await updateDoc(doc(db, PROXY_COL, proxyId), {
-    status: 'rejected',
-    approvedBy,
-    approvedAt: serverTimestamp(),
-  });
+  return apiRequest(API_ENDPOINTS.leave.proxy.reject(proxyId), { method: 'PATCH' });
 }

@@ -4,7 +4,6 @@ import { ArrowLeft, Users, User } from 'lucide-react';
 import { useAuth } from '@/core/context/AuthContext';
 import { createTask } from '@/modules/tasks/services/tasksFirebaseService';
 import teachersData from '@/data/teachers.json';
-import { Timestamp } from 'firebase/firestore';
 
 const SCOPE_OPTIONS = [
   { value: 'individual', label: 'Individual Teachers' },
@@ -13,7 +12,8 @@ const SCOPE_OPTIONS = [
 
 export default function CreateTaskPage() {
   const navigate = useNavigate();
-  const { user, canManageTasks } = useAuth();
+  const { user, role } = useAuth();
+  const canManageAllTasks = ['admin', 'principal', 'coordinator'].includes(role);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -25,8 +25,9 @@ export default function CreateTaskPage() {
   const [selectedTeachers, setSelectedTeachers] = useState([]);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
+  const [submitError, setSubmitError] = useState('');
 
-  if (!canManageTasks) {
+  if (!canManageAllTasks) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-500">
         You don't have permission to create tasks.
@@ -63,6 +64,7 @@ export default function CreateTaskPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitError('');
     const errs = validate();
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
     setSaving(true);
@@ -76,14 +78,14 @@ export default function CreateTaskPage() {
           startDate,
           dueDate,
           remarks: remarks.trim(),
-          createdBy: user?.uid,
-          createdByName: user?.displayName || user?.email,
+          createdByName: user?.name || user?.displayName || user?.email,
         },
         assignees
       );
       navigate('/tasks');
     } catch (err) {
       console.error(err);
+      setSubmitError(err.message || 'Failed to create task.');
     }
     setSaving(false);
   };
@@ -109,6 +111,11 @@ export default function CreateTaskPage() {
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-5">
+          {submitError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+              {submitError}
+            </div>
+          )}
           <h2 className="font-semibold text-gray-800 text-sm uppercase tracking-wide">Task Details</h2>
 
           <div>

@@ -34,8 +34,8 @@ function StatusBadge({ status }) {
 
 export default function LeaveListPage() {
   const navigate = useNavigate();
-  const { canManageTasks, isPrincipal, isAdmin, user } = useAuth();
-  const canApprove = canManageTasks || isPrincipal || isAdmin;
+  const { canApproveLeave, user } = useAuth();
+  const canApprove = canApproveLeave;
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('all');

@@ -1,13 +1,7 @@
 import React, { useState } from 'react';
 import { User, Lock, BookOpen, CheckCircle2, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/core/context/AuthContext';
-import { auth } from '@/lib/firebase';
-import {
-  updatePassword,
-  reauthenticateWithCredential,
-  EmailAuthProvider,
-  updateProfile,
-} from 'firebase/auth';
+import { authService } from '@/core/services/authService';
 import teachersData from '@/data/teachers.json';
 
 function Field({ label, value, readOnly }) {
@@ -79,8 +73,8 @@ export default function ProfilePage() {
       setPwStatus({ type: 'error', msg: 'All fields are required.' });
       return;
     }
-    if (newPassword.length < 6) {
-      setPwStatus({ type: 'error', msg: 'New password must be at least 6 characters.' });
+    if (newPassword.length < 8) {
+      setPwStatus({ type: 'error', msg: 'New password must be at least 8 characters.' });
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -94,18 +88,16 @@ export default function ProfilePage() {
 
     setPwLoading(true);
     try {
-      const credential = EmailAuthProvider.credential(user.email, currentPassword);
-      await reauthenticateWithCredential(auth.currentUser, credential);
-      await updatePassword(auth.currentUser, newPassword);
+      await authService.changePassword(currentPassword, newPassword);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setPwStatus({ type: 'success', msg: 'Password changed successfully.' });
     } catch (err) {
-      const msg = err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential'
+      const msg = err.message === 'Current password is incorrect'
         ? 'Current password is incorrect.'
-        : err.code === 'auth/too-many-requests'
-        ? 'Too many attempts. Try again later.'
+        : err.message?.includes('Session expired')
+        ? 'Your session expired. Please log in again.'
         : 'Failed to change password. Please try again.';
       setPwStatus({ type: 'error', msg });
     }
@@ -173,7 +165,7 @@ export default function ProfilePage() {
             label="New Password"
             value={newPassword}
             onChange={e => { setNewPassword(e.target.value); setPwStatus(null); }}
-            placeholder="At least 6 characters"
+            placeholder="At least 8 characters"
           />
           <PasswordInput
             label="Confirm New Password"

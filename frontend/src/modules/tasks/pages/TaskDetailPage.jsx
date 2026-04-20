@@ -33,7 +33,8 @@ const STATUS_TRANSITIONS = {
 export default function TaskDetailPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
-  const { canManageTasks } = useAuth();
+  const { role } = useAuth();
+  const canManageAllTasks = ['admin', 'principal', 'coordinator'].includes(role);
   const [task, setTask] = useState(null);
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -101,7 +102,7 @@ export default function TaskDetailPage() {
             <span className={`px-2.5 py-0.5 rounded text-xs font-medium ${PRIORITY_CLS[task.priority] || 'bg-gray-100 text-gray-600'}`}>
               {task.priority?.charAt(0).toUpperCase() + task.priority?.slice(1)} Priority
             </span>
-            {canManageTasks && task.status !== 'cancelled' && (
+            {canManageAllTasks && task.status !== 'cancelled' && (
               <button
                 onClick={handleCancel}
                 className="text-xs text-red-500 hover:text-red-700 px-3 py-1 border border-red-200 rounded hover:bg-red-50"

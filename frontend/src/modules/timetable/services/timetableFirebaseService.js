@@ -1,20 +1,21 @@
-import { db } from '@/lib/firebase';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-
-const TIMETABLE_DOC_PATH = ['timetables', 'published'];
+/**
+ * Timetable service — replaced Firebase with REST API calls.
+ * Function signatures preserved so existing callers need no changes.
+ */
+import { apiRequest } from '@/core/api/client';
+import { API_ENDPOINTS } from '@/core/api/endpoints';
 
 export async function saveTimetableToDb(gridsByClass) {
-  await setDoc(doc(db, ...TIMETABLE_DOC_PATH), {
-    grids: gridsByClass,
-    publishedAt: serverTimestamp(),
+  return apiRequest(API_ENDPOINTS.timetable.publish, {
+    method: 'POST',
+    body: JSON.stringify({ grids: gridsByClass }),
   });
 }
 
 export async function loadTimetableFromDb() {
   try {
-    const snap = await getDoc(doc(db, ...TIMETABLE_DOC_PATH));
-    if (snap.exists()) return snap.data().grids || {};
-    return null;
+    const result = await apiRequest(API_ENDPOINTS.timetable.active);
+    return result?.grids || null;
   } catch {
     return null;
   }
