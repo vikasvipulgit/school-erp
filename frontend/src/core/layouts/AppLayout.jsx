@@ -16,7 +16,9 @@ import {
   UserCircle,
 } from "lucide-react";
 import { useAuth } from "@/core/context/AuthContext";
+import NotificationBell from "@/core/components/NotificationBell";
 
+// roles: allowlist — omit to show to everyone
 const navSections = [
   {
     label: "OVERVIEW",
@@ -25,13 +27,18 @@ const navSections = [
     ],
   },
   {
+    label: "TIMETABLE SETUP",
+    items: [
+      { label: "Organization", icon: Building2,     path: "/organization", roles: ["admin"] },
+      { label: "Classes",      icon: BookOpen,      path: "/class-time",   roles: ["admin", "coordinator"] },
+      { label: "Teachers",     icon: Users,         path: "/teachers",     roles: ["admin", "coordinator"] },
+      { label: "Subjects",     icon: GraduationCap, path: "/subjects",     roles: ["admin", "coordinator"] },
+      { label: "Rooms",        icon: LayoutGrid,    path: "/rooms",        roles: ["admin", "coordinator"] },
+    ],
+  },
+  {
     label: "TIMETABLE",
     items: [
-      { label: "Organization", icon: Building2, path: "/organization", hideFromTeacher: true },
-      { label: "Classes", icon: BookOpen, path: "/class-time", hideFromTeacher: true },
-      { label: "Teachers", icon: Users, path: "/teachers", hideFromTeacher: true },
-      { label: "Subjects", icon: GraduationCap, path: "/subjects", hideFromTeacher: true },
-      { label: "Rooms", icon: LayoutGrid, path: "/rooms", hideFromTeacher: true },
       { label: "Timetables", icon: CalendarDays, path: "/timetable" },
     ],
   },
@@ -39,13 +46,13 @@ const navSections = [
     label: "OPERATIONS",
     items: [
       { label: "Tasks", icon: ClipboardList, path: "/tasks" },
-      { label: "Leave", icon: CalendarOff, path: "/leave" },
+      { label: "Leave", icon: CalendarOff,   path: "/leave" },
     ],
   },
   {
     label: "ANALYTICS",
     items: [
-      { label: "Reports", icon: BarChart3, path: "/reports", hideFromTeacher: true },
+      { label: "Reports", icon: BarChart3, path: "/reports", roles: ["admin", "principal", "coordinator"] },
     ],
   },
 ];
@@ -92,7 +99,7 @@ export default function AppLayout({ children }) {
         <nav className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-5">
           {navSections.map((section) => {
             const visibleItems = section.items.filter(
-              (item) => !(item.hideFromTeacher && isTeacher)
+              (item) => !item.roles || item.roles.includes(role)
             );
             if (visibleItems.length === 0) return null;
             return (
@@ -178,6 +185,7 @@ export default function AppLayout({ children }) {
       {/* Top bar */}
       <header className="fixed left-[240px] top-0 right-0 h-[56px] bg-white border-b border-gray-100 flex items-center px-6 z-20">
         <div className="flex-1" />
+        <NotificationBell />
       </header>
 
       {/* Main content */}

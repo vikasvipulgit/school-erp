@@ -50,11 +50,17 @@ export function AuthProvider({ children }) {
   const isCoordinator = role === 'coordinator';
   const isTeacher     = role === 'teacher';
 
-  const canManageTasks         = level >= ROLE_LEVEL.teacher;
-  const canManageTimetable     = level >= ROLE_LEVEL.coordinator;
-  const canApproveLeave        = level >= ROLE_LEVEL.coordinator;
-  const canViewReports         = level >= ROLE_LEVEL.teacher;
+  // What each role can do
+  const canManageTasks          = level >= ROLE_LEVEL.teacher;
+  const canManageTimetable      = level >= ROLE_LEVEL.coordinator;
+  const canApproveLeave         = level >= ROLE_LEVEL.coordinator;
+  const canApproveProxy         = level >= ROLE_LEVEL.principal;
+  const canAssignProxy          = level >= ROLE_LEVEL.coordinator;
+  const canViewReports          = level >= ROLE_LEVEL.coordinator;
+  const canConfigureMasterData  = level >= ROLE_LEVEL.admin;      // org settings, period slots, rules
   const canManageTimetableSetup = level >= ROLE_LEVEL.admin;
+  const canCreateTasks          = level >= ROLE_LEVEL.coordinator;
+  const canDeleteTasks          = role === 'admin';
 
   return (
     <AuthContext.Provider value={{
@@ -72,8 +78,13 @@ export function AuthProvider({ children }) {
       canManageTasks,
       canManageTimetable,
       canApproveLeave,
+      canApproveProxy,
+      canAssignProxy,
       canViewReports,
+      canConfigureMasterData,
       canManageTimetableSetup,
+      canCreateTasks,
+      canDeleteTasks,
     }}>
       {children}
     </AuthContext.Provider>
