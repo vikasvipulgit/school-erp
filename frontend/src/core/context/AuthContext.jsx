@@ -1,9 +1,14 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { authService } from '@/core/services/authService';
-import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { apiRequest } from '@/core/api/client';
+import { requestNotificationPermission } from '@/utils/firebaseNotifications';
 
 const AuthContext = createContext(null);
+
+const ROLE_LEVEL = {
+  student: 0, parent: 1, teacher: 2,
+  coordinator: 3, principal: 4, admin: 5,
+};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -11,56 +16,99 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = authService.onAuthChange(async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
-          const profile = snap.exists() ? snap.data() : {};
-          setUserProfile(profile);
-          setUser(firebaseUser);
-        } catch {
-          setUserProfile({});
-          setUser(firebaseUser);
-        }
-      } else {
-        setUser(null);
-        setUserProfile(null);
+    const stored = authService.getStoredUser();
+    if (stored) {
+      setUser(stored);
+      setUserProfile(stored);
+      // Students have a separate DB table — /auth/me only covers the users table.
+      // Skip the background refresh for students; the stored login profile is sufficient.
+      if (stored.role !== 'student') {
+        apiRequest('/auth/me')
+          .then((profile) => {
+            setUserProfile(profile);
+            localStorage.setItem('user_profile', JSON.stringify(profile));
+          })
+          .catch(() => {});
       }
-      setLoading(false);
-    });
-    return () => unsubscribe();
+    }
+    setLoading(false);
   }, []);
 
-  const role = userProfile?.role || 'teacher';
-  const teacherId = userProfile?.teacherId || null;
+  useEffect(() => {
+    if (user) {
+      // Small delay to ensure browser is ready
+      setTimeout(() => {
+        requestNotificationPermission();
+      }, 2000);
+    }
+  }, [user]);
 
-  const isAdmin        = role === 'admin' || role === 'administrator';
-  const isPrincipal    = role === 'principal';
-  const isCoordinator  = role === 'coordinator';
-  const isTeacher      = role === 'teacher';
-  const canManageTasks = isAdmin || isPrincipal;
-  const canManageTimetable = isAdmin || isCoordinator;
-  const canApproveLeave    = isAdmin || isPrincipal;
-  const canViewReports     = !isTeacher;
-  const canManageTimetableSetup = isAdmin || isPrincipal;
+  const login = useCallback((userData) => {
+    setUser(userData);
+    setUserProfile(userData);
+  }, []);
+
+  const logout = useCallback(async () => {
+    await authService.logout();
+    setUser(null);
+    setUserProfile(null);
+  }, []);
+
+  const role = userProfile?.role || user?.role || null;
+  const teacherId = userProfile?.teacherId || user?.teacherId || null;
+  const level = ROLE_LEVEL[role] ?? 0;
+
+  const isAdmin       = role === 'admin';
+  const isPrincipal   = role === 'principal';
+  const isCoordinator = role === 'coordinator';
+  const isTeacher     = role === 'teacher';
+
+  const canManageTasks          = level >= ROLE_LEVEL.teacher;
+  const canManageTimetable      = level >= ROLE_LEVEL.coordinator;
+  const canApproveLeave         = level >= ROLE_LEVEL.coordinator;
+  const canApproveProxy         = level >= ROLE_LEVEL.principal;
+  const canAssignProxy          = level >= ROLE_LEVEL.coordinator;
+  const canViewReports          = level >= ROLE_LEVEL.coordinator;
+  const canConfigureMasterData  = level >= ROLE_LEVEL.admin;
+  const canManageTimetableSetup = level >= ROLE_LEVEL.admin;
+  const canCreateTasks          = level >= ROLE_LEVEL.coordinator;
+  const canDeleteTasks          = role === 'admin';
+
+  // Memoize the context value so every consumer (NotificationBell, ClassesContext,
+  // AppLayout, etc.) only re-renders when auth state genuinely changes,
+  // not on every AuthProvider render.
+  const value = useMemo(() => ({
+    user,
+    userProfile,
+    role,
+    teacherId,
+    loading,
+    login,
+    logout,
+    isAdmin,
+    isPrincipal,
+    isCoordinator,
+    isTeacher,
+    canManageTasks,
+    canManageTimetable,
+    canApproveLeave,
+    canApproveProxy,
+    canAssignProxy,
+    canViewReports,
+    canConfigureMasterData,
+    canManageTimetableSetup,
+    canCreateTasks,
+    canDeleteTasks,
+  }), [
+    user, userProfile, role, teacherId, loading, login, logout,
+    isAdmin, isPrincipal, isCoordinator, isTeacher,
+    canManageTasks, canManageTimetable, canApproveLeave, canApproveProxy,
+    canAssignProxy, canViewReports, canConfigureMasterData,
+    canManageTimetableSetup, canCreateTasks, canDeleteTasks,
+  ]);
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      userProfile,
-      role,
-      teacherId,
-      loading,
-      isAdmin,
-      isPrincipal,
-      isCoordinator,
-      isTeacher,
-      canManageTasks,
-      canManageTimetable,
-      canApproveLeave,
-      canViewReports,
-      canManageTimetableSetup,
-    }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
@@ -71,3 +119,4 @@ export function useAuth() {
   if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
   return ctx;
 }
+

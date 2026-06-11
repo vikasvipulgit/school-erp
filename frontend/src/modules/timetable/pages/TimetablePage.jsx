@@ -20,6 +20,7 @@ import {
   getInitialGrid,
   getBookedTeachersForSlot,
 } from "@/modules/timetable/selectors";
+import { canAssignTeacherForDay } from "@/modules/timetable/rules";
 import {
   SUBJECT_MIN_PERIODS,
   SUBJECT_MAX_PERIODS,
@@ -30,19 +31,22 @@ import {
   canAssignSubjectForClass,
   canAssignSubjectForClassDay,
   getSubjectRuleViolationsForClass,
-} from "@/modules/timetable/rules";
+} from "@/modules/timetable/rules"; // Closing brace and 'from' clause were missing here
 import { autoAssignForClass } from "@/modules/timetable/autoAssign";
-import { getPeriodsFromSlots, DEFAULT_DAYS } from "@/modules/timetable/periodUtils";
+import { getPeriodsFromSlots, getWorkingDays } from "@/modules/timetable/periodUtils";
 import {
   saveTimetableToDb,
   loadTimetableFromDb,
-} from "@/modules/timetable/services/timetableFirebaseService";
+  deleteTimetableFromDb,
+  getStudentTimetable,
+} from "@/modules/timetable/services/timetableService";
 import { useClasses } from "@/core/context/ClassesContext";
 import { useAuth } from "@/core/context/AuthContext";
-import subjectsData from "@/data/subjects.json";
-import teachersData from "@/data/teachers.json";
+import { apiRequest } from "@/core/api/client";
+import { useSubjects } from "@/core/hooks/useSubjects";
+import { useTeachers } from "@/core/hooks/useTeachers";
 
-export const days = DEFAULT_DAYS;
+export const days = getWorkingDays();
 // Module-level export so other pages can import periods without triggering component re-renders.
 // Reads erp_period_slots on first import; navigating to ClassTimeManagement and back causes a fresh read.
 export const periods = getPeriodsFromSlots();
@@ -66,14 +70,17 @@ function normalizeGridsForPeriods(savedGrids, periods) {
 export default function TimetablePage() {
   const { classOptions } = useClasses();
   const { isTeacher, teacherId, user } = useAuth();
+  const isStudent = user?.role === 'student';
+  const { subjects } = useSubjects();
+  const { teachers } = useTeachers();
 
   // Periods are derived from the ClassTimeManagement localStorage slots
   const [periods] = useState(() => getPeriodsFromSlots());
 
   const myTeacherRecord = React.useMemo(() => {
     if (!isTeacher) return null;
-    return teachersData.find((t) => t.id === teacherId || t.email === user?.email) || null;
-  }, [isTeacher, teacherId, user?.email]);
+    return teachers.find((t) => t.id === teacherId || t.email === user?.email) || null;
+  }, [isTeacher, teacherId, user?.email, teachers]);
 
   const [selectedClass, setSelectedClass] = useState("");
   const [view, setView] = useState(isTeacher ? "teacher" : "class");
@@ -82,43 +89,66 @@ export default function TimetablePage() {
   const [dialog, setDialog] = useState({ open: false, pi: null, di: null });
   const [assignSubject, setAssignSubject] = useState("");
   const [assignTeacher, setAssignTeacher] = useState("");
-  const [teachers, setTeachers] = useState(teachersData);
   const [isDirty, setIsDirty] = useState(false);
+  const [draftExists, setDraftExists] = useState(false);
   const [leaveConfirm, setLeaveConfirm] = useState(null);
+  const [noticeDialog, setNoticeDialog] = useState({ open: false, title: "", message: "", tone: "info" });
+  const [publishDialog, setPublishDialog] = useState({ open: false, effectiveFrom: "", effectiveTo: "", error: "" });
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [hasLoadedPrefs, setHasLoadedPrefs] = useState(false);
   const [dbLoading, setDbLoading] = useState(true);
   const isFirstLoad = useRef(true);
 
-  // Load from Firestore on mount, fall back to localStorage
+  const showNotice = useCallback((title, message, tone = "info") => {
+    setNoticeDialog({ open: true, title, message, tone });
+  }, []);
+
+  const openPublishDialog = useCallback(() => {
+    const today = new Date().toISOString().split("T")[0];
+    setPublishDialog((prev) => ({
+      open: true,
+      effectiveFrom: prev.effectiveFrom || today,
+      effectiveTo: prev.effectiveTo || today,
+      error: "",
+    }));
+  }, []);
+
+  // Load from the API on mount, fall back to localStorage
   useEffect(() => {
     async function init() {
       setDbLoading(true);
       try {
-        const dbData = await loadTimetableFromDb();
-        if (dbData) {
-          setGridsByClass(normalizeGridsForPeriods(dbData, periods));
+        if (isStudent) {
+          const studentTt = await getStudentTimetable();
+          if (studentTt && studentTt.grids && studentTt.classId) {
+             setGridsByClass(normalizeGridsForPeriods(studentTt.grids, periods));
+             setSelectedClass(studentTt.classId);
+             setView("class");
+          }
         } else {
-          const local = localStorage.getItem("erp_timetable");
-          if (local) {
-            setGridsByClass(normalizeGridsForPeriods(JSON.parse(local), periods));
+          const dbData = await loadTimetableFromDb();
+          if (dbData) {
+            setGridsByClass(normalizeGridsForPeriods(dbData, periods));
+          } else {
+            const local = localStorage.getItem("erp_timetable");
+            if (local) {
+              setGridsByClass(normalizeGridsForPeriods(JSON.parse(local), periods));
+            }
           }
         }
       } catch {
-        try {
-          const local = localStorage.getItem("erp_timetable");
-          if (local) {
-            setGridsByClass(normalizeGridsForPeriods(JSON.parse(local), periods));
-          }
-        } catch {}
+        if (!isStudent) {
+          try {
+            const local = localStorage.getItem("erp_timetable");
+            if (local) {
+              setGridsByClass(normalizeGridsForPeriods(JSON.parse(local), periods));
+            }
+          } catch {}
+        }
       }
       setDbLoading(false);
 
-      const tSaved = sessionStorage.getItem("erp_teacher_assignments");
-      if (tSaved) {
-        try { setTeachers(JSON.parse(tSaved)); } catch {}
-      }
-
-      if (isTeacher) {
+      if (isTeacher || isStudent) {
         setHasLoadedPrefs(true);
         return;
       }
@@ -147,29 +177,40 @@ export default function TimetablePage() {
   }, [gridsByClass, dbLoading]);
 
   useEffect(() => {
-    sessionStorage.setItem("erp_teacher_assignments", JSON.stringify(teachers));
-  }, [teachers]);
-
-  useEffect(() => {
     if (!hasLoadedPrefs) return;
     sessionStorage.setItem("erp_timetable_prefs", JSON.stringify({ selectedClass, view }));
   }, [selectedClass, view, hasLoadedPrefs]);
 
-  // Warn on browser close/refresh when there are unpublished changes
   useEffect(() => {
-    const handler = (e) => {
-      if (isDirty) {
-        e.preventDefault();
-        e.returnValue = "";
+    if (!selectedClass || isTeacher || isStudent) return;
+    async function loadDraftOrPub() {
+      try {
+        const res = await apiRequest(`/timetable/${selectedClass}`);
+        if (res) {
+          if (res.status === "draft") {
+            setDraftExists(true);
+          } else {
+            setDraftExists(false);
+          }
+          if (res.grids) {
+            setGridsByClass((prev) => ({
+              ...prev,
+              [selectedClass]: res.grids[selectedClass] || res.grids,
+            }));
+          }
+        } else {
+          setDraftExists(false);
+        }
+      } catch {
+        setDraftExists(false);
       }
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [isDirty]);
+    }
+    loadDraftOrPub();
+  }, [selectedClass, isTeacher]);
 
-  // Intercept NavLink clicks when dirty
+  // Intercept in-app navigation when dirty
   useEffect(() => {
-    if (!isDirty) return;
+    if (isTeacher || isStudent || !isDirty) return;
     const handleClick = (e) => {
       const anchor = e.target.closest("a");
       if (!anchor) return;
@@ -195,7 +236,7 @@ export default function TimetablePage() {
       { bg: "#E0E7FF", border: "#818CF8", text: "#3730A3" },
       { bg: "#FCE7F3", border: "#F472B6", text: "#9D174D" },
     ];
-    return subjectsData.reduce((acc, subject, index) => {
+    return subjects.reduce((acc, subject, index) => {
       acc[subject.name] = palette[index % palette.length];
       return acc;
     }, {});
@@ -205,24 +246,45 @@ export default function TimetablePage() {
     subjectColorMap[subjectName] || { bg: "#F1F5F9", border: "#94A3B8", text: "#334155" };
 
   const handleDropAssign = useCallback((pi, di, payload) => {
-    if (isTeacher || view !== "class" || !selectedClass) return;
+    if (isTeacher || isStudent || view !== "class" || !selectedClass) return;
     if (!payload?.subject || !payload?.teacher) return;
-    const cell = gridsByClass[selectedClass]?.[pi]?.[di];
+
+    // Use the full grid (with fallback) so drops work on uninitialized classes
+    const currentGrid = gridsByClass[selectedClass] || getInitialGrid({ periods, days, isHolidayDay });
+    const cell = currentGrid[pi]?.[di];
     if (!cell || cell.type === "break" || cell.type === "holiday") return;
 
     const booked = getBookedTeachersForSlot(gridsByClass, pi, di);
     const currentTeacher = cell?.teacher;
     if (booked.has(payload.teacher) && payload.teacher !== currentTeacher) {
-      alert(`${payload.teacher} is already booked for this slot.`);
+      showNotice("Teacher Unavailable", `${payload.teacher} is already booked for this slot.`, "warning");
       return;
     }
-    if (!canAssignSubjectForClass({ subjectsData, gridsByClass, classKey: selectedClass, subjectName: payload.subject })) {
-      const status = getAvailabilityStatus({ subjectsData, gridsByClass, selectedClass, subjectName: payload.subject });
-      alert(`Cannot assign ${payload.subject}. Max ${SUBJECT_MAX_PERIODS} periods per class (currently ${status.usedClass}), or global availability limit reached.`);
+
+    // When replacing a filled cell, exclude it from counts to avoid false limit errors
+    let gridsForValidation = gridsByClass;
+    if ((cell.type === "filled" || cell.type === "proxy") && selectedClass in gridsByClass) {
+      const tempGrid = currentGrid.map((row, rIdx) =>
+        row.map((c, cIdx) => rIdx === pi && cIdx === di ? { type: "empty" } : c)
+      );
+      gridsForValidation = { ...gridsByClass, [selectedClass]: tempGrid };
+    }
+
+    if (!canAssignSubjectForClass({ subjectsData: subjects, gridsByClass: gridsForValidation, classKey: selectedClass, subjectName: payload.subject })) {
+      const status = getAvailabilityStatus({ subjectsData: subjects, gridsByClass: gridsForValidation, selectedClass, subjectName: payload.subject });
+      showNotice(
+        "Subject Limit Reached",
+        `Cannot assign ${payload.subject}. Max ${SUBJECT_MAX_PERIODS} periods per class (currently ${status.usedClass}).`,
+        "warning"
+      );
       return;
     }
-    if (!canAssignSubjectForClassDay({ gridsByClass, classKey: selectedClass, subjectName: payload.subject, dayIndex: di })) {
-      alert(`Cannot assign ${payload.subject}. Max ${SUBJECT_MAX_PER_DAY} periods per day for a class.`);
+    if (!canAssignSubjectForClassDay({ gridsByClass: gridsForValidation, classKey: selectedClass, subjectName: payload.subject, dayIndex: di })) {
+      showNotice(
+        "Daily Subject Limit Reached",
+        `Cannot assign ${payload.subject}. Max ${SUBJECT_MAX_PER_DAY} periods per day for a class.`,
+        "warning"
+      );
       return;
     }
     setGridsByClass((prev) => {
@@ -231,16 +293,17 @@ export default function TimetablePage() {
       next[pi][di] = { type: "filled", subject: payload.subject, teacher: payload.teacher, room: "101" };
       return { ...prev, [selectedClass]: next };
     });
-  }, [isTeacher, view, selectedClass, gridsByClass, periods]);
+  }, [isTeacher, isStudent, view, selectedClass, gridsByClass, periods]);
 
   const handleCellClick = useCallback((pi, di) => {
-    if (isTeacher || view === "teacher" || !selectedClass) return;
-    const cell = gridsByClass[selectedClass]?.[pi]?.[di];
+    if (isTeacher || isStudent || view === "teacher" || !selectedClass) return;
+    const currentGrid = gridsByClass[selectedClass] || getInitialGrid({ periods, days, isHolidayDay });
+    const cell = currentGrid[pi]?.[di];
     if (!cell || cell.type === "break" || cell.type === "holiday") return;
     setDialog({ open: true, pi, di });
     setAssignSubject(cell?.subject || "");
     setAssignTeacher(cell?.teacher || "");
-  }, [isTeacher, view, selectedClass, gridsByClass]);
+  }, [isTeacher, isStudent, view, selectedClass, gridsByClass, periods]);
 
   const teacherOptions = React.useMemo(
     () => teachers.map((t) => ({ value: t.name, label: t.name })),
@@ -275,22 +338,42 @@ export default function TimetablePage() {
   const unassignedCount = grid.flat().filter((c) => c?.type === "empty").length;
 
   const missingTeacherSubjects = selectedClass
-    ? getSubjectsForClass(subjectsData, selectedClass.split("-")[0]).filter(
+    ? getSubjectsForClass(subjects, selectedClass.split("-")[0]).filter(
         (subject) => getTeachersForSubject(teachers, subject, selectedClass.split("-")[0]).length === 0
       )
     : [];
+
+  // Grids with the current dialog cell temporarily cleared, so validation doesn't double-count it
+  const dialogGridForValidation = React.useMemo(() => {
+    if (!dialog.open || dialog.pi === null || dialog.di === null || !selectedClass) return gridsByClass;
+    const currentGrid = gridsByClass[selectedClass] || getInitialGrid({ periods, days, isHolidayDay });
+    const currentCell = currentGrid[dialog.pi]?.[dialog.di];
+    if (!currentCell || (currentCell.type !== "filled" && currentCell.type !== "proxy")) return gridsByClass;
+    const tempGrid = currentGrid.map((row, rIdx) =>
+      row.map((c, cIdx) => rIdx === dialog.pi && cIdx === dialog.di ? { type: "empty" } : c)
+    );
+    return { ...gridsByClass, [selectedClass]: tempGrid };
+  }, [dialog, gridsByClass, selectedClass, periods]);
 
   const handleAssign = () => {
     if (!assignSubject || !assignTeacher || !selectedClass) return;
     if (dialog.di === null || dialog.di === undefined) return;
 
-    if (!canAssignSubjectForClass({ subjectsData, gridsByClass, classKey: selectedClass, subjectName: assignSubject })) {
-      const status = getAvailabilityStatus({ subjectsData, gridsByClass, selectedClass, subjectName: assignSubject });
-      alert(`Cannot assign ${assignSubject}. Max ${SUBJECT_MAX_PERIODS} periods per class (currently ${status.usedClass}), or global availability limit reached.`);
+    if (!canAssignSubjectForClass({ subjectsData: subjects, gridsByClass: dialogGridForValidation, classKey: selectedClass, subjectName: assignSubject })) {
+      const status = getAvailabilityStatus({ subjectsData: subjects, gridsByClass: dialogGridForValidation, selectedClass, subjectName: assignSubject });
+      showNotice(
+        "Subject Limit Reached",
+        `Cannot assign ${assignSubject}. Max ${SUBJECT_MAX_PERIODS} periods per class (currently ${status.usedClass}).`,
+        "warning"
+      );
       return;
     }
-    if (!canAssignSubjectForClassDay({ gridsByClass, classKey: selectedClass, subjectName: assignSubject, dayIndex: dialog.di })) {
-      alert(`Cannot assign ${assignSubject}. Max ${SUBJECT_MAX_PER_DAY} periods per day for a class (already ${getUsedPeriodsForSubjectInClassDay(gridsByClass, selectedClass, assignSubject, dialog.di)}).`);
+    if (!canAssignSubjectForClassDay({ gridsByClass: dialogGridForValidation, classKey: selectedClass, subjectName: assignSubject, dayIndex: dialog.di })) {
+      showNotice(
+        "Daily Subject Limit Reached",
+        `Cannot assign ${assignSubject}. Max ${SUBJECT_MAX_PER_DAY} periods per day for a class (already ${getUsedPeriodsForSubjectInClassDay(dialogGridForValidation, selectedClass, assignSubject, dialog.di)}).`,
+        "warning"
+      );
       return;
     }
 
@@ -305,18 +388,48 @@ export default function TimetablePage() {
     setAssignTeacher("");
   };
 
+  const handleRemove = () => {
+    if (!selectedClass || dialog.pi === null || dialog.di === null) return;
+    setGridsByClass((prev) => {
+      const current = prev[selectedClass] || getInitialGrid({ periods, days, isHolidayDay });
+      const next = current.map((row) => [...row]);
+      next[dialog.pi][dialog.di] = { type: "empty" };
+      return { ...prev, [selectedClass]: next };
+    });
+    setDialog({ open: false, pi: null, di: null });
+    setAssignSubject("");
+    setAssignTeacher("");
+  };
+
   const handleAutoAssign = () => {
     if (!selectedClass) return;
     setGridsByClass((prev) =>
-      autoAssignForClass({ selectedClass, gridsByClass: prev, periods, days, subjectsData, teachersData: teachers, isHolidayDay })
+      autoAssignForClass({ selectedClass, gridsByClass: prev, periods, days, subjectsData: subjects, teachersData: teachers, isHolidayDay })
     );
   };
 
-  const handlePublish = async () => {
+  const handleDelete = async () => {
+    if (!selectedClass) return;
+    try {
+      await deleteTimetableFromDb(selectedClass);
+      // Clear current class grid
+      setGridsByClass((prev) => {
+        const next = { ...prev };
+        delete next[selectedClass];
+        return next;
+      });
+      setDeleteConfirmOpen(false);
+      showNotice("Timetable Deleted", "The timetable for this class has been deleted from the database.", "success");
+    } catch (err) {
+      showNotice("Error", "Failed to delete timetable.", "warning");
+    }
+  };
+
+  const validateBeforePublish = useCallback(() => {
     const classKeys = new Set(Object.keys(gridsByClass));
     if (selectedClass) classKeys.add(selectedClass);
     const violations = Array.from(classKeys).flatMap((classKey) =>
-      getSubjectRuleViolationsForClass({ classKey, gridsByClass, subjectsData, days, getSubjectsForClass, isHolidayDay })
+      getSubjectRuleViolationsForClass({ classKey, gridsByClass, subjectsData: subjects, days, getSubjectsForClass, isHolidayDay })
     );
     if (violations.length > 0) {
       const preview = violations
@@ -324,22 +437,59 @@ export default function TimetablePage() {
         .map((v) => (v.day ? `${v.classKey}: ${v.subject} (${v.used}) on ${v.day}` : `${v.classKey}: ${v.subject} (${v.used})`))
         .join("\n");
       const more = violations.length > 10 ? `\n...and ${violations.length - 10} more` : "";
-      alert(
-        `Cannot publish. Each subject must have ${SUBJECT_MIN_PERIODS}-${SUBJECT_MAX_PERIODS} periods per class and max ${SUBJECT_MAX_PER_DAY} per day.\n${preview}${more}`
+      showNotice(
+        "Publish Blocked",
+        `Cannot publish. Each subject must have ${SUBJECT_MIN_PERIODS}-${SUBJECT_MAX_PERIODS} periods per class and max ${SUBJECT_MAX_PER_DAY} per day.\n${preview}${more}`,
+        "warning"
       );
+      return false;
+    }
+    return true;
+  }, [gridsByClass, selectedClass, subjects, showNotice]);
+
+  const handlePublish = useCallback(async () => {
+    const { effectiveFrom, effectiveTo } = publishDialog;
+    if (!effectiveFrom || !effectiveTo) {
+      setPublishDialog((prev) => ({ ...prev, error: "Please select both start and end dates." }));
+      return;
+    }
+    if (effectiveTo < effectiveFrom) {
+      setPublishDialog((prev) => ({ ...prev, error: "End date must be on or after the start date." }));
       return;
     }
 
     try {
-      await saveTimetableToDb(gridsByClass);
-      sessionStorage.setItem("erp_teacher_assignments", JSON.stringify(teachers));
+      await saveTimetableToDb(gridsByClass, { effectiveFrom, effectiveTo });
       setIsDirty(false);
-      alert("Timetable published and saved to database.");
+      setPublishDialog((prev) => ({ ...prev, open: false, error: "" }));
+      showNotice(
+        "Timetable Published",
+        `Timetable published and saved to the database for ${effectiveFrom} to ${effectiveTo}.`,
+        "success"
+      );
     } catch {
-      alert("Published locally (database save failed — check your connection).");
+      showNotice("Published Locally", "Published locally, but saving to the database failed. Please check your connection.", "warning");
       setIsDirty(false);
     }
-  };
+  }, [gridsByClass, publishDialog, showNotice]);
+
+  const handleSaveDraft = useCallback(async () => {
+    if (!selectedClass) return;
+    try {
+      await apiRequest("/timetable/draft", {
+        method: "POST",
+        body: JSON.stringify({
+          classId: selectedClass,
+          grids: gridsByClass,
+        }),
+      });
+      setIsDirty(false);
+      setDraftExists(true);
+      showNotice("Draft Saved", "Your timetable draft has been saved successfully.", "success");
+    } catch {
+      showNotice("Error", "Failed to save draft.", "warning");
+    }
+  }, [selectedClass, gridsByClass, showNotice]);
 
   const isClassSelected = !!selectedClass;
   const isTeacherSelected = !!selectedTeacher;
@@ -358,11 +508,16 @@ export default function TimetablePage() {
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white">
-      {/* Unsaved changes banner */}
-      {isDirty && !isTeacher && (
+      {isDirty && !isTeacher && !isStudent && (
         <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-sm text-amber-800 rounded-t-xl">
           <AlertCircle size={15} className="shrink-0" />
-          <span>You have unpublished changes. Click <strong>Publish Timetable</strong> to save them to the database.</span>
+          <span>You have unsaved changes in the current view.</span>
+        </div>
+      )}
+      {draftExists && !isTeacher && !isStudent && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-sm text-amber-800 rounded-t-xl mt-1">
+          <AlertCircle size={15} className="shrink-0" />
+          <span>You have unpublished changes for this class in draft. Click <strong>Publish Timetable</strong> to make them live.</span>
         </div>
       )}
 
@@ -371,6 +526,10 @@ export default function TimetablePage() {
         {isTeacher ? (
           <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 font-medium">
             {myTeacherRecord?.name || user?.displayName || "My Timetable"}
+          </div>
+        ) : isStudent ? (
+          <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 font-medium">
+            {selectedClass ? `Class: ${selectedClass}` : "My Timetable"}
           </div>
         ) : view === "class" ? (
           <Select value={selectedClass} onValueChange={setSelectedClass}>
@@ -396,7 +555,7 @@ export default function TimetablePage() {
           </Select>
         )}
 
-        {!isTeacher && (
+        {!isTeacher && !isStudent && (
           <div className="flex gap-0.5 ml-2">
             <button
               className={view === "class" ? "bg-blue-600 text-white rounded-lg px-3 py-1.5 text-sm" : "bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"}
@@ -413,7 +572,7 @@ export default function TimetablePage() {
           </div>
         )}
 
-        {!isTeacher && (
+        {!isTeacher && !isStudent && user?.role !== 'principal' && (
           <div className="ml-auto flex items-center gap-2">
             <button
               className="border border-gray-200 text-gray-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -423,8 +582,25 @@ export default function TimetablePage() {
               Auto Assign
             </button>
             <button
+              className="border border-red-200 bg-red-50 text-red-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={() => setDeleteConfirmOpen(true)}
+              disabled={view !== "class" || !isClassSelected || dbLoading || !filledCount}
+            >
+              Delete Timetable
+            </button>
+            <button
+              className="border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={handleSaveDraft}
+              disabled={view !== "class" || !isClassSelected || dbLoading}
+            >
+              <Save size={14} />
+              Save Draft
+            </button>
+            <button
               className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium ${isDirty ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-              onClick={handlePublish}
+              onClick={() => {
+                if (validateBeforePublish()) openPublishDialog();
+              }}
             >
               <Save size={14} />
               Publish Timetable
@@ -444,7 +620,7 @@ export default function TimetablePage() {
       {!dbLoading && (
         <div className={`flex gap-4 ${view === "class" ? (!isClassSelected ? "opacity-60 pointer-events-none" : "") : (!isTeacherSelected ? "opacity-60 pointer-events-none" : "")}`}>
           <div className="flex-1 overflow-x-auto">
-            {view === "class" && isClassSelected && (missingTeacherSubjects.length > 0 || unassignedCount > 0) && (
+            {view === "class" && isClassSelected && !isStudent && (missingTeacherSubjects.length > 0 || unassignedCount > 0) && (
               <div className="mx-4 mt-4 mb-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 {missingTeacherSubjects.length > 0 && (
                   <div>
@@ -499,9 +675,9 @@ export default function TimetablePage() {
                         return (
                           <td
                             key={di}
-                            className={`bg-red-50 border-red-300 border h-20 w-36 align-top p-1.5 relative ${isTeacher ? "cursor-default" : "cursor-pointer hover:bg-red-100"}`}
-                            onClick={() => !isTeacher && handleCellClick(pi, di)}
-                            {...(!isTeacher ? makeDragDropProps(pi, di) : {})}
+                            className={`bg-red-50 border-red-300 border h-20 w-36 align-top p-1.5 relative ${isTeacher || isStudent ? "cursor-default" : "cursor-pointer hover:bg-red-100"}`}
+                            onClick={() => !isTeacher && !isStudent && handleCellClick(pi, di)}
+                            {...(!isTeacher && !isStudent ? makeDragDropProps(pi, di) : {})}
                           >
                             <div className="absolute top-1 right-1"><AlertTriangle size={12} className="text-red-400" /></div>
                             <div className="text-xs font-semibold text-red-700">{cell.subject}</div>
@@ -514,9 +690,9 @@ export default function TimetablePage() {
                         return (
                           <td
                             key={di}
-                            className={`bg-yellow-50 border-yellow-300 border h-20 w-36 align-top p-1.5 relative ${isTeacher ? "cursor-default" : "cursor-pointer hover:bg-yellow-100"}`}
-                            onClick={() => !isTeacher && handleCellClick(pi, di)}
-                            {...(!isTeacher ? makeDragDropProps(pi, di) : {})}
+                            className={`bg-yellow-50 border-yellow-300 border h-20 w-36 align-top p-1.5 relative ${isTeacher || isStudent ? "cursor-default" : "cursor-pointer hover:bg-yellow-100"}`}
+                            onClick={() => !isTeacher && !isStudent && handleCellClick(pi, di)}
+                            {...(!isTeacher && !isStudent ? makeDragDropProps(pi, di) : {})}
                           >
                             <div className="absolute top-1 right-1 bg-yellow-100 rounded px-1 text-xs text-yellow-700">Proxy</div>
                             <div className="rounded-lg px-2 py-1" style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}>
@@ -531,9 +707,9 @@ export default function TimetablePage() {
                         return (
                           <td
                             key={di}
-                            className={`bg-white border border-gray-100 h-20 w-36 align-top p-1.5 relative ${isTeacher ? "cursor-default" : "cursor-pointer hover:bg-blue-50 hover:border-blue-200"}`}
-                            onClick={() => !isTeacher && handleCellClick(pi, di)}
-                            {...(!isTeacher ? makeDragDropProps(pi, di) : {})}
+                            className={`bg-white border border-gray-100 h-20 w-36 align-top p-1.5 relative ${isTeacher || isStudent ? "cursor-default" : "cursor-pointer hover:bg-blue-50 hover:border-blue-200"}`}
+                            onClick={() => !isTeacher && !isStudent && handleCellClick(pi, di)}
+                            {...(!isTeacher && !isStudent ? makeDragDropProps(pi, di) : {})}
                           >
                             <div className="rounded-lg px-2 py-1" style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}>
                               <div className="text-xs font-semibold">{cell.subject}</div>
@@ -549,11 +725,11 @@ export default function TimetablePage() {
                       return (
                         <td
                           key={di}
-                          className={`bg-white border border-gray-100 h-20 w-36 align-top p-1.5 relative ${isTeacher ? "cursor-default" : "cursor-pointer hover:bg-blue-50 hover:border-blue-200"}`}
-                          onClick={() => !isTeacher && handleCellClick(pi, di)}
-                          {...(!isTeacher ? makeDragDropProps(pi, di) : {})}
+                          className={`bg-white border border-gray-100 h-20 w-36 align-top p-1.5 relative ${isTeacher || isStudent ? "cursor-default" : "cursor-pointer hover:bg-blue-50 hover:border-blue-200"}`}
+                          onClick={() => !isTeacher && !isStudent && handleCellClick(pi, di)}
+                          {...(!isTeacher && !isStudent ? makeDragDropProps(pi, di) : {})}
                         >
-                          {!isTeacher && (
+                          {!isTeacher && !isStudent && (
                             <div className="flex items-center justify-center h-full w-full">
                               <Plus size={20} className="text-gray-300" />
                             </div>
@@ -567,14 +743,14 @@ export default function TimetablePage() {
             </table>
           </div>
 
-          {view === "class" && (
+          {view === "class" && !isStudent && (
             <div className="w-72 shrink-0">
               <div className="rounded-xl border border-gray-200 bg-white p-3 mr-4 mt-4">
                 <div className="text-xs uppercase tracking-widest text-gray-400 font-semibold">Drag & Drop</div>
                 <div className="text-sm font-semibold text-gray-900 mt-1">Subjects & Teachers</div>
                 <div className="mt-3 space-y-2 max-h-[70vh] overflow-y-auto pr-1">
                   {selectedClass &&
-                    getSubjectsForClass(subjectsData, selectedClass.split("-")[0]).map((subject) => {
+                    getSubjectsForClass(subjects, selectedClass.split("-")[0]).map((subject) => {
                       const teachersForSubject = getTeachersForSubject(teachers, subject, selectedClass.split("-")[0]);
                       const colors = getSubjectColors(subject);
                       if (teachersForSubject.length === 0) {
@@ -610,13 +786,15 @@ export default function TimetablePage() {
       )}
 
       {/* Summary Bar */}
-      <div className="flex gap-6 px-4 py-3 border-t border-gray-100 bg-gray-50 rounded-b-xl items-center">
-        <span className="text-sm text-gray-600">{filledCount}/{totalPeriods} periods filled</span>
-        <span className={`text-sm ${conflictCount === 0 ? "text-green-600" : "text-red-600"}`}>
-          Conflicts: {conflictCount === 0 ? "0" : <span className="bg-red-100 text-red-700 rounded px-2 py-0.5">{conflictCount}</span>}
-        </span>
-        <button className="border rounded-lg px-3 py-1.5 text-sm ml-auto text-gray-600 hover:bg-white">Export</button>
-      </div>
+      {!isStudent && (
+        <div className="flex gap-6 px-4 py-3 border-t border-gray-100 bg-gray-50 rounded-b-xl items-center">
+          <span className="text-sm text-gray-600">{filledCount}/{totalPeriods} periods filled</span>
+          <span className={`text-sm ${conflictCount === 0 ? "text-green-600" : "text-red-600"}`}>
+            Conflicts: {conflictCount === 0 ? "0" : <span className="bg-red-100 text-red-700 rounded px-2 py-0.5">{conflictCount}</span>}
+          </span>
+          <button className="border rounded-lg px-3 py-1.5 text-sm ml-auto text-gray-600 hover:bg-white">Export</button>
+        </div>
+      )}
 
       {/* Slot assignment Dialog */}
       <Dialog open={dialog.open} onOpenChange={(open) => setDialog((prev) => ({ ...prev, open }))}>
@@ -632,17 +810,17 @@ export default function TimetablePage() {
               </SelectTrigger>
               <SelectContent className="bg-white border border-gray-300 shadow-lg rounded-lg z-[200]">
                 {selectedClass &&
-                  getSubjectsForClass(subjectsData, selectedClass.split("-")[0]).map((s) => (
+                  getSubjectsForClass(subjects, selectedClass.split("-")[0]).map((s) => (
                     <SelectItem key={s} value={s}>{s}</SelectItem>
                   ))}
               </SelectContent>
             </Select>
             {assignSubject && selectedClass && (
-              <div className={`mt-2 text-xs p-2 rounded ${canAssignSubjectForClass({ subjectsData, gridsByClass, classKey: selectedClass, subjectName: assignSubject }) ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+              <div className={`mt-2 text-xs p-2 rounded ${canAssignSubjectForClass({ subjectsData: subjects, gridsByClass: dialogGridForValidation, classKey: selectedClass, subjectName: assignSubject }) ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
                 {(() => {
-                  const status = getAvailabilityStatus({ subjectsData, gridsByClass, selectedClass, subjectName: assignSubject });
-                  const usedDay = dialog.di !== null ? getUsedPeriodsForSubjectInClassDay(gridsByClass, selectedClass, assignSubject, dialog.di) : 0;
-                  return `Availability: ${status.used}/${status.available} • Class: ${status.usedClass}/${SUBJECT_MAX_PERIODS} • Day: ${usedDay}/${SUBJECT_MAX_PER_DAY}`;
+                  const status = getAvailabilityStatus({ subjectsData: subjects, gridsByClass: dialogGridForValidation, selectedClass, subjectName: assignSubject });
+                  const usedDay = dialog.di !== null ? getUsedPeriodsForSubjectInClassDay(dialogGridForValidation, selectedClass, assignSubject, dialog.di) : 0;
+                  return `Class: ${status.usedClass}/${SUBJECT_MAX_PERIODS} • Day: ${usedDay}/${SUBJECT_MAX_PER_DAY}`;
                 })()}
               </div>
             )}
@@ -662,9 +840,14 @@ export default function TimetablePage() {
                     const booked = dialog.pi !== null && dialog.di !== null
                       ? getBookedTeachersForSlot(gridsByClass, dialog.pi, dialog.di).has(t.name) && t.name !== currentTeacher
                       : false;
+                    const dailyLimitReached = dialog.di !== null
+                      ? !canAssignTeacherForDay(gridsByClass, t.name, dialog.di, currentTeacher)
+                      : false;
+                    const disabled = booked || dailyLimitReached;
+                    const suffix = booked ? " (Booked)" : dailyLimitReached ? " (Daily limit reached)" : "";
                     return (
-                      <SelectItem key={t.id} value={t.name} disabled={booked}>
-                        {t.name}{booked ? " (Booked)" : ""}
+                      <SelectItem key={t.id} value={t.name} disabled={disabled}>
+                        {t.name}{suffix}
                       </SelectItem>
                     );
                   })}
@@ -675,7 +858,16 @@ export default function TimetablePage() {
               </SelectContent>
             </Select>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex items-center">
+            {dialog.open && dialog.pi !== null && dialog.di !== null &&
+              classGrid[dialog.pi]?.[dialog.di]?.type === "filled" && (
+              <button
+                className="px-4 py-2 border border-red-200 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 mr-auto"
+                onClick={handleRemove}
+              >
+                Remove
+              </button>
+            )}
             <button
               className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 mr-2"
               onClick={() => setDialog((prev) => ({ ...prev, open: false }))}
@@ -685,14 +877,124 @@ export default function TimetablePage() {
             <button
               className={`px-4 py-2 rounded-lg text-sm font-medium ${
                 !assignSubject || !assignTeacher ||
-                (assignSubject && selectedClass && !canAssignSubjectForClass({ subjectsData, gridsByClass, classKey: selectedClass, subjectName: assignSubject }))
+                (assignSubject && selectedClass && !canAssignSubjectForClass({ subjectsData: subjects, gridsByClass: dialogGridForValidation, classKey: selectedClass, subjectName: assignSubject }))
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : "bg-blue-600 text-white hover:bg-blue-700"
               }`}
               onClick={handleAssign}
-              disabled={!assignSubject || !assignTeacher || (assignSubject && selectedClass && !canAssignSubjectForClass({ subjectsData, gridsByClass, classKey: selectedClass, subjectName: assignSubject }))}
+              disabled={!assignSubject || !assignTeacher || (assignSubject && selectedClass && !canAssignSubjectForClass({ subjectsData: subjects, gridsByClass: dialogGridForValidation, classKey: selectedClass, subjectName: assignSubject }))}
             >
-              {assignSubject && selectedClass && !canAssignSubjectForClass({ subjectsData, gridsByClass, classKey: selectedClass, subjectName: assignSubject }) ? "Limit Reached" : "Assign"}
+              {assignSubject && selectedClass && !canAssignSubjectForClass({ subjectsData: subjects, gridsByClass: dialogGridForValidation, classKey: selectedClass, subjectName: assignSubject }) ? "Limit Reached" : "Assign"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={publishDialog.open} onOpenChange={(open) => setPublishDialog((prev) => ({ ...prev, open, error: open ? prev.error : "" }))}>
+        <DialogContent className="bg-white border border-gray-200 shadow-xl max-w-md">
+          <DialogHeader>
+            <DialogTitle>Publish Timetable</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Choose the date range during which this timetable should be treated as the published version.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Effective from</label>
+                <input
+                  type="date"
+                  value={publishDialog.effectiveFrom}
+                  onChange={(e) => setPublishDialog((prev) => ({ ...prev, effectiveFrom: e.target.value, error: "" }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Effective to</label>
+                <input
+                  type="date"
+                  value={publishDialog.effectiveTo}
+                  min={publishDialog.effectiveFrom || undefined}
+                  onChange={(e) => setPublishDialog((prev) => ({ ...prev, effectiveTo: e.target.value, error: "" }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+            {publishDialog.error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {publishDialog.error}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <button
+              className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 mr-2"
+              onClick={() => setPublishDialog((prev) => ({ ...prev, open: false, error: "" }))}
+            >
+              Cancel
+            </button>
+            <button
+              className="px-4 py-2 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700"
+              onClick={handlePublish}
+            >
+              Publish
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="bg-white border border-gray-200 shadow-xl max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Timetable</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Are you sure you want to delete the timetable for <strong>{selectedClass}</strong>? This action cannot be undone.
+            </p>
+          </div>
+          <DialogFooter>
+            <button
+              className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 mr-2"
+              onClick={() => setDeleteConfirmOpen(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="px-4 py-2 rounded-lg bg-red-600 text-sm font-medium text-white hover:bg-red-700"
+              onClick={handleDelete}
+            >
+              Confirm Delete
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={noticeDialog.open} onOpenChange={(open) => setNoticeDialog((prev) => ({ ...prev, open }))}>
+        <DialogContent className="bg-white border border-gray-200 shadow-xl max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span
+                className={`inline-block h-2.5 w-2.5 rounded-full ${
+                  noticeDialog.tone === "success"
+                    ? "bg-emerald-500"
+                    : noticeDialog.tone === "warning"
+                      ? "bg-amber-500"
+                      : "bg-blue-500"
+                }`}
+              />
+              {noticeDialog.title}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="whitespace-pre-line text-sm text-gray-600">
+            {noticeDialog.message}
+          </div>
+          <DialogFooter>
+            <button
+              className="px-4 py-2 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700"
+              onClick={() => setNoticeDialog((prev) => ({ ...prev, open: false }))}
+            >
+              OK
             </button>
           </DialogFooter>
         </DialogContent>

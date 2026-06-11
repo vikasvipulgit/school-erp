@@ -1,14 +1,8 @@
 import React, { useState } from 'react';
 import { User, Lock, BookOpen, CheckCircle2, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/core/context/AuthContext';
-import { auth } from '@/lib/firebase';
-import {
-  updatePassword,
-  reauthenticateWithCredential,
-  EmailAuthProvider,
-  updateProfile,
-} from 'firebase/auth';
-import teachersData from '@/data/teachers.json';
+import { authService } from '@/core/services/authService';
+import { useTeachers } from '@/core/hooks/useTeachers';
 
 function Field({ label, value, readOnly }) {
   return (
@@ -48,10 +42,11 @@ function PasswordInput({ label, value, onChange, placeholder }) {
 }
 
 export default function ProfilePage() {
-  const { user, userProfile, teacherId } = useAuth();
+  const { userProfile, teacherId } = useAuth();
+  const { teachers } = useTeachers();
 
-  const teacher = teachersData.find(
-    t => t.id === teacherId || t.email === user?.email
+  const teacher = teachers.find(
+    t => t.id === teacherId || t.email === userProfile?.email
   );
 
   // Change password state
@@ -79,8 +74,8 @@ export default function ProfilePage() {
       setPwStatus({ type: 'error', msg: 'All fields are required.' });
       return;
     }
-    if (newPassword.length < 6) {
-      setPwStatus({ type: 'error', msg: 'New password must be at least 6 characters.' });
+    if (newPassword.length < 8) {
+      setPwStatus({ type: 'error', msg: 'New password must be at least 8 characters.' });
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -94,18 +89,16 @@ export default function ProfilePage() {
 
     setPwLoading(true);
     try {
-      const credential = EmailAuthProvider.credential(user.email, currentPassword);
-      await reauthenticateWithCredential(auth.currentUser, credential);
-      await updatePassword(auth.currentUser, newPassword);
+      await authService.changePassword(currentPassword, newPassword);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setPwStatus({ type: 'success', msg: 'Password changed successfully.' });
     } catch (err) {
-      const msg = err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential'
+      const msg = err.message === 'Current password is incorrect'
         ? 'Current password is incorrect.'
-        : err.code === 'auth/too-many-requests'
-        ? 'Too many attempts. Try again later.'
+        : err.message?.includes('Session expired')
+        ? 'Your session expired. Please log in again.'
         : 'Failed to change password. Please try again.';
       setPwStatus({ type: 'error', msg });
     }
@@ -123,11 +116,11 @@ export default function ProfilePage() {
       <div className="bg-white rounded-xl border border-gray-200 p-6 mb-5">
         <div className="flex items-center gap-4 mb-6">
           <div className="w-16 h-16 rounded-full bg-emerald-500 flex items-center justify-center text-white text-2xl font-bold shrink-0">
-            {(user?.displayName || user?.email || 'U')[0].toUpperCase()}
+            {(userProfile?.name || userProfile?.email || 'U')[0].toUpperCase()}
           </div>
           <div>
-            <div className="text-lg font-bold text-gray-900">{user?.displayName || '—'}</div>
-            <div className="text-sm text-gray-500">{user?.email}</div>
+            <div className="text-lg font-bold text-gray-900">{userProfile?.name || '—'}</div>
+            <div className="text-sm text-gray-500">{userProfile?.email}</div>
             <span className={`inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${roleBadgeCls}`}>
               {roleLabel}
             </span>
@@ -135,8 +128,8 @@ export default function ProfilePage() {
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Full Name"  value={user?.displayName} readOnly />
-          <Field label="Email"      value={user?.email}       readOnly />
+          <Field label="Full Name"  value={userProfile?.name}  readOnly />
+          <Field label="Email"      value={userProfile?.email} readOnly />
           <Field label="Role"       value={roleLabel}         readOnly />
           {teacher && <Field label="Subject" value={teacher.subject} readOnly />}
         </div>
@@ -173,7 +166,7 @@ export default function ProfilePage() {
             label="New Password"
             value={newPassword}
             onChange={e => { setNewPassword(e.target.value); setPwStatus(null); }}
-            placeholder="At least 6 characters"
+            placeholder="At least 8 characters"
           />
           <PasswordInput
             label="Confirm New Password"

@@ -7,8 +7,9 @@ import {
   getAssignmentsForTask,
   updateAssignmentStatus,
   cancelTask,
-} from '@/modules/tasks/services/tasksFirebaseService';
-import teachersData from '@/data/teachers.json';
+  cancelAssignment,
+} from '@/modules/tasks/services/tasksService';
+import { useTeachers } from '@/core/hooks/useTeachers';
 
 const STATUS_CONFIG = {
   not_started: { label: 'Not Started', cls: 'bg-gray-100 text-gray-600' },
@@ -33,7 +34,9 @@ const STATUS_TRANSITIONS = {
 export default function TaskDetailPage() {
   const { taskId } = useParams();
   const navigate = useNavigate();
-  const { canManageTasks } = useAuth();
+  const { role } = useAuth();
+  const { teachers } = useTeachers();
+  const canManageAllTasks = ['admin', 'principal', 'coordinator'].includes(role);
   const [task, setTask] = useState(null);
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +64,17 @@ export default function TaskDetailPage() {
     await cancelTask(taskId);
     navigate('/tasks');
   };
+
+  const handleCancelAssignment = async (assignmentId) => {
+    if (!window.confirm('Cancel this assignment for this specific teacher?')) return;
+    try {
+      await cancelAssignment(assignmentId);
+      await load();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
 
   if (loading) {
     return (
@@ -101,7 +115,7 @@ export default function TaskDetailPage() {
             <span className={`px-2.5 py-0.5 rounded text-xs font-medium ${PRIORITY_CLS[task.priority] || 'bg-gray-100 text-gray-600'}`}>
               {task.priority?.charAt(0).toUpperCase() + task.priority?.slice(1)} Priority
             </span>
-            {canManageTasks && task.status !== 'cancelled' && (
+            {canManageAllTasks && !['principal', 'coordinator'].includes(role) && task.status !== 'cancelled' && (
               <button
                 onClick={handleCancel}
                 className="text-xs text-red-500 hover:text-red-700 px-3 py-1 border border-red-200 rounded hover:bg-red-50"
@@ -132,6 +146,20 @@ export default function TaskDetailPage() {
             <span className="font-medium">Remarks:</span> {task.remarks}
           </div>
         )}
+
+        {task.fileUrl && (
+          <div className="mt-4 flex items-center gap-2">
+            <span className="text-sm font-medium text-gray-700">Attachment:</span>
+            <a
+              href={task.fileUrl.startsWith('http') ? task.fileUrl : `${import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:4000'}${task.fileUrl}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100"
+            >
+              View PDF Document
+            </a>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200">
@@ -153,7 +181,7 @@ export default function TaskDetailPage() {
 
         <div className="divide-y">
           {assignments.map((a) => {
-            const teacher = teachersData.find((t) => t.id === a.teacherId);
+            const teacher = teachers.find((t) => t.id === a.teacherId);
             const cfg = STATUS_CONFIG[a.status] || STATUS_CONFIG.not_started;
             const transitions = STATUS_TRANSITIONS[a.status] || [];
             const completedAt = a.completedAt?.toDate ? a.completedAt.toDate() : null;
@@ -189,7 +217,16 @@ export default function TaskDetailPage() {
                       ))}
                     </select>
                   )}
+                  {canManageAllTasks && !['principal', 'coordinator'].includes(role) && a.status !== 'cancelled' && a.status !== 'completed' && (
+                    <button
+                      onClick={() => handleCancelAssignment(a.id)}
+                      className="text-[10px] text-red-500 hover:text-red-700 px-1.5 py-0.5 border border-red-100 rounded hover:bg-red-50"
+                    >
+                      Cancel
+                    </button>
+                  )}
                 </div>
+
               </div>
             );
           })}

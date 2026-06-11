@@ -1,4 +1,7 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { apiRequest } from '@/core/api/client';
+import { API_ENDPOINTS } from '@/core/api/endpoints';
+import { useAuth } from '@/core/context/AuthContext';
 import defaultClassesData from '@/data/classes.json';
 
 const STORAGE_KEY = 'erp_classes';
@@ -6,7 +9,10 @@ const STORAGE_KEY = 'erp_classes';
 function loadClasses() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : defaultClassesData;
+    }
   } catch {}
   return defaultClassesData;
 }
@@ -18,7 +24,20 @@ function persist(classes) {
 const ClassesContext = createContext(null);
 
 export function ClassesProvider({ children }) {
+  const { user } = useAuth();
   const [classes, setClasses] = useState(loadClasses);
+
+  useEffect(() => {
+    if (!user) return;
+    apiRequest(API_ENDPOINTS.classes.list)
+      .then((list) => {
+        if (!list?.length) return;
+        const fromApi = list.map((c) => ({ class: c.name, sections: c.sections || [] }));
+        setClasses(fromApi);
+        persist(fromApi);
+      })
+      .catch(() => {});
+  }, [user]);
 
   const addClass = useCallback((className, sections) => {
     setClasses((prev) => {
@@ -78,9 +97,11 @@ export function ClassesProvider({ children }) {
   }, []);
 
   // Flat list of { value: "Class 1-A", label: "Class 1 - A" }
-  const classOptions = classes.flatMap((c) =>
-    c.sections.map((s) => ({ value: `${c.class}-${s}`, label: `${c.class} - ${s}` }))
-  );
+  const classOptions = Array.isArray(classes) 
+    ? classes.flatMap((c) =>
+        (c?.sections || []).map((s) => ({ value: `${c.class}-${s}`, label: `${c.class} - ${s}` }))
+      )
+    : [];
 
   return (
     <ClassesContext.Provider value={{ classes, classOptions, addClass, removeClass, addSection, removeSection }}>

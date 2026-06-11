@@ -1,6 +1,6 @@
 # Contributing Guide
 
-This project is intended to scale as an enterprise-grade School ERP. We prioritize consistency, maintainability, and clear ownership of modules.
+This project is intended to scale as an enterprise-grade Javiya Schooling System. We prioritize consistency, maintainability, and clear ownership of modules.
 
 ## Project Structure
 

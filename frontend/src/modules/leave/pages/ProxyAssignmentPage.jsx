@@ -2,27 +2,27 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, UserCheck, AlertCircle } from 'lucide-react';
 import {
-  getLeaveApplications,
-  createProxyAssignment,
-  getProxyAssignments,
-  approveProxy,
-} from '@/modules/leave/services/leaveFirebaseService';
+  getLeaveApplications, assignProxyBatch, getProxyAssignments
+} from '@/modules/leave/services/leaveService'; // Updated import
+import { loadTimetableFromDb } from '@/modules/timetable/services/timetableService'; // Updated import
 import { useAuth } from '@/core/context/AuthContext';
-import teachersData from '@/data/teachers.json';
+import { useTeachers } from '@/core/hooks/useTeachers';
 import { days, periods } from '@/modules/timetable/pages/TimetablePage';
 
-function getAffectedPeriods(leaveTeacherId, startDate, endDate) {
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem('erp_timetable') || '{}'); } catch {}
-
+function getAffectedPeriods(leaveTeacherId, startDate, endDate, teachers, timetableData) {
+  const saved = timetableData || {};
   const start = new Date(startDate);
   const leaveEnd = new Date(endDate);
   const affected = [];
 
+  const teacher = teachers.find(t => t.id === leaveTeacherId);
+  if (!teacher) return [];
+  const teacherName = teacher.name;
+
   Object.entries(saved).forEach(([classKey, grid]) => {
     grid.forEach((row, pi) => {
       row.forEach((cell, di) => {
-        if (cell?.teacher && cell.teacher === teachersData.find(t => t.id === leaveTeacherId)?.name) {
+        if (cell?.teacher && cell.teacher === teacherName) {
           const dayName = days[di];
           const period = periods[pi];
           if (!period || period.break) return;
@@ -53,14 +53,12 @@ function getAffectedPeriods(leaveTeacherId, startDate, endDate) {
   return affected;
 }
 
-function getSuggestedProxies(subject, leaveTeacherId, periodIndex, dayIndex) {
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem('erp_timetable') || '{}'); } catch {}
-
-  return teachersData
+function getSuggestedProxies(subject, leaveTeacherId, periodIndex, dayIndex, teachers, timetableData) {
+  const saved = timetableData || {};
+  return teachers
     .filter((t) => {
       if (t.id === leaveTeacherId) return false;
-      if (t.subject !== subject) return false;
+      if (!t.subjectNames?.includes(subject) && t.subject !== subject) return false;
       // Check not booked in this slot
       const isBooked = Object.values(saved).some((grid) => {
         const cell = grid?.[periodIndex]?.[dayIndex];
@@ -75,57 +73,69 @@ export default function ProxyAssignmentPage() {
   const { leaveId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { teachers } = useTeachers();
   const [leave, setLeave] = useState(null);
   const [affected, setAffected] = useState([]);
   const [existing, setExisting] = useState([]);
+  const [timetable, setTimetable] = useState({});
   const [selections, setSelections] = useState({});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!teachers || teachers.length === 0) return;
+
     async function load() {
-      const [all, proxies] = await Promise.all([
+      const [all, proxies, dbTimetable] = await Promise.all([
         getLeaveApplications(),
         getProxyAssignments(),
+        loadTimetableFromDb(),
       ]);
       const found = all.find((l) => l.id === leaveId);
       setLeave(found);
-      if (found) {
-        const ap = getAffectedPeriods(found.teacherId, found.startDate, found.endDate);
+      if (found && dbTimetable) {
+        setTimetable(dbTimetable);
+        const ap = getAffectedPeriods(found.teacherId, found.startDate, found.endDate, teachers, dbTimetable);
         setAffected(ap);
         setExisting(proxies.filter((p) => p.leaveId === leaveId));
       }
       setLoading(false);
     }
     load();
-  }, [leaveId]);
+  }, [leaveId, teachers]);
 
   const handleSelect = (key, teacherId) => {
     setSelections((prev) => ({ ...prev, [key]: teacherId }));
   };
 
   const handleAssign = async () => {
+    const selectedAssignments = affected
+      .filter((ap) => selections[`${ap.date}-${ap.periodIndex}-${ap.dayIndex}`])
+      .map((ap) => ({
+        date: ap.date,
+        period: ap.periodIndex,
+        proxyTeacherId: selections[`${ap.date}-${ap.periodIndex}-${ap.dayIndex}`],
+        classId: ap.classKey,
+        subjectId: ap.subject,
+        originalTeacherId: ap.originalTeacherId,
+      }));
+
+    if (selectedAssignments.length === 0) {
+      alert('Please select at least one proxy teacher.');
+      return;
+    }
+
     setSaving(true);
     try {
-      await Promise.all(
-        affected
-          .filter((ap) => selections[`${ap.date}-${ap.periodIndex}-${ap.dayIndex}`])
-          .map((ap) =>
-            createProxyAssignment({
-              leaveId,
-              originalTeacherId: ap.originalTeacherId,
-              proxyTeacherId: selections[`${ap.date}-${ap.periodIndex}-${ap.dayIndex}`],
-              date: ap.date,
-              classKey: ap.classKey,
-              subject: ap.subject,
-              periodLabel: ap.periodLabel,
-              periodTime: ap.periodTime,
-              assignedBy: user?.uid,
-            })
-          )
-      );
+      await assignProxyBatch({
+        leaveId,
+        assignments: selectedAssignments,
+      });
       navigate('/leave');
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Failed to assign proxy teachers.');
+    }
     setSaving(false);
   };
 
@@ -139,7 +149,7 @@ export default function ProxyAssignmentPage() {
 
   if (!leave) return <div className="text-gray-500 text-center py-16">Leave not found.</div>;
 
-  const teacher = teachersData.find((t) => t.id === leave.teacherId);
+  const teacher = teachers.find((t) => t.id === leave.teacherId);
   const assignedKeys = new Set(existing.map((p) => `${p.date}-${p.periodLabel}`));
 
   return (
@@ -170,7 +180,7 @@ export default function ProxyAssignmentPage() {
             {affected.map((ap) => {
               const key = `${ap.date}-${ap.periodIndex}-${ap.dayIndex}`;
               const alreadyAssigned = assignedKeys.has(`${ap.date}-${ap.periodLabel}`);
-              const suggestions = getSuggestedProxies(ap.subject, ap.originalTeacherId, ap.periodIndex, ap.dayIndex);
+              const suggestions = getSuggestedProxies(ap.subject, ap.originalTeacherId, ap.periodIndex, ap.dayIndex, teachers, timetable);
 
               return (
                 <div
