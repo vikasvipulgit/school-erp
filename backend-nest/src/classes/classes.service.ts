@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { randomUUID } from 'crypto';
 import { SchoolClassEntity } from '../database/entities/class.entity';
 import { CreateClassDto, UpdateClassDto } from './dto/classes.dto';
 
@@ -22,7 +23,8 @@ export class ClassesService {
   }
 
   async create(dto: CreateClassDto) {
-    const entity = this.repo.create({ ...dto, schoolId: dto.schoolId || 'school_001' });
+    const id = dto.id || `CLS${randomUUID().replace(/-/g, '').slice(0, 17)}`;
+    const entity = this.repo.create({ ...dto, id, schoolId: dto.schoolId || 'school_001' });
     return this.repo.save(entity);
   }
 

@@ -1,4 +1,18 @@
 const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
+const LOCAL_STORAGE_KEYS_TO_CLEAR = [
+  'access_token',
+  'refresh_token',
+  'user_profile',
+  'erp_timetable_rules',
+  'erp_working_days',
+  'erp_rooms',
+  'erp_classes',
+  'erp_timetable',
+  'erp_period_slots',
+];
+const SESSION_STORAGE_KEYS_TO_CLEAR = [
+  'erp_timetable_prefs',
+];
 
 // ─── Token storage ────────────────────────────────────────────────────────────
 
@@ -13,9 +27,8 @@ function saveSession(data) {
 }
 
 function clearSession() {
-  localStorage.removeItem('access_token');
-  localStorage.removeItem('refresh_token');
-  localStorage.removeItem('user_profile');
+  LOCAL_STORAGE_KEYS_TO_CLEAR.forEach((key) => localStorage.removeItem(key));
+  SESSION_STORAGE_KEYS_TO_CLEAR.forEach((key) => sessionStorage.removeItem(key));
 }
 
 // ─── Internal fetch helpers ───────────────────────────────────────────────────
@@ -34,7 +47,7 @@ async function post(path, body, token = null) {
   return json;
 }
 
-// ─── Public API (same shape as old Firebase authService) ─────────────────────
+// ─── Public API ──────────────────────────────────────────────────────────────
 
 export const authService = {
   signup: async (name, email, password, role = 'student', teacherId = null) => {
@@ -43,13 +56,19 @@ export const authService = {
       ...(teacherId ? { teacherId } : {}),
     });
     saveSession(data);
-    return data.user;
+    return data?.user || null;
   },
 
   login: async (email, password) => {
     const data = await post('/auth/login', { email, password });
     saveSession(data);
-    return data.user;
+    return data?.user || null;
+  },
+
+  studentLogin: async (studentId, password) => {
+    const data = await post('/auth/student-login', { studentId, password });
+    saveSession(data);
+    return data?.user || null;
   },
 
   logout: async () => {
@@ -67,9 +86,11 @@ export const authService = {
     const refreshToken = localStorage.getItem('refresh_token');
     if (!refreshToken) throw new Error('No refresh token');
     const data = await post('/auth/refresh', { refreshToken });
-    localStorage.setItem('access_token', data.accessToken);
-    localStorage.setItem('refresh_token', data.refreshToken);
-    return data.accessToken;
+    if (data?.accessToken && data?.refreshToken) {
+      localStorage.setItem('access_token', data.accessToken);
+      localStorage.setItem('refresh_token', data.refreshToken);
+    }
+    return data?.accessToken;
   },
 
   changePassword: async (currentPassword, newPassword) => {
@@ -113,15 +134,23 @@ export const authService = {
   },
 
   getStoredUser: () => {
-    const raw = localStorage.getItem('user_profile');
-    return raw ? JSON.parse(raw) : null;
+    try {
+      const raw = localStorage.getItem('user_profile');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
   },
 
-  // Mirrors Firebase onAuthStateChanged — calls callback immediately with stored user
+  // Calls the callback immediately with the stored user profile
   onAuthChange: (callback) => {
-    const raw = localStorage.getItem('user_profile');
-    const user = raw ? JSON.parse(raw) : null;
-    callback(user);
+    try {
+      const raw = localStorage.getItem('user_profile');
+      const user = raw ? JSON.parse(raw) : null;
+      callback(user);
+    } catch {
+      callback(null);
+    }
     return () => {}; // no-op unsubscribe
   },
 };

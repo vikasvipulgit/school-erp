@@ -1,6 +1,7 @@
 import {
   Controller, Get, Post, Delete,
   Param, Body, UseGuards, HttpCode, HttpStatus,
+  Query,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ReportsService } from './reports.service';
@@ -23,6 +24,27 @@ export class ReportsController {
   @Get()
   @ApiOperation({ summary: 'List all reports (teacher+)' })
   findAll() { return this.svc.findAll(); }
+
+  @Get('substitution')
+  @Roles(Role.ADMIN, Role.PRINCIPAL)
+  @ApiOperation({ summary: 'Substitution report (admin/principal)' })
+  getSubstitution(@Query('date') date: string) {
+    return this.svc.getSubstitutionReport(date);
+  }
+
+  @Get('tasks/pending')
+  @Roles(Role.ADMIN, Role.PRINCIPAL)
+  @ApiOperation({ summary: 'Pending tasks report (admin/principal)' })
+  getPendingTasks() {
+    return this.svc.getPendingTasksReport();
+  }
+
+  @Get('tasks/overdue')
+  @Roles(Role.ADMIN, Role.PRINCIPAL)
+  @ApiOperation({ summary: 'Overdue tasks report (admin/principal)' })
+  getOverdueTasks() {
+    return this.svc.getOverdueTasksReport();
+  }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get report by id (teacher+)' })

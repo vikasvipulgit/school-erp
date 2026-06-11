@@ -1,10 +1,12 @@
 /**
- * Seed script — replicates all Firestore collections into PostgreSQL.
+ * Seed script — populates PostgreSQL with reference data.
  * Run: npm run seed
  */
 import 'reflect-metadata';
 import * as dotenv from 'dotenv';
 import { DataSource } from 'typeorm';
+import * as bcrypt from 'bcrypt';
+import { Role } from '../common/enums/role.enum';
 import { SubjectEntity } from './entities/subject.entity';
 import { TeacherEntity } from './entities/teacher.entity';
 import { SchoolClassEntity } from './entities/class.entity';
@@ -19,8 +21,13 @@ import { TimetableEntity } from './entities/timetable.entity';
 import { AttendanceEntity } from './entities/attendance.entity';
 import { FeeEntity } from './entities/fee.entity';
 import { ReportEntity } from './entities/report.entity';
+import { AcademicYearEntity } from './entities/academic-year.entity';
+import { TeacherLeaveBalanceEntity } from './entities/teacher-leave-balance.entity';
+import { StudentEntity } from './entities/student.entity';
 
 dotenv.config();
+
+const DEFAULT_TEACHER_PASSWORD = process.env.TEACHER_SEED_PASSWORD || 'Teacher@123';
 
 const AppDataSource = new DataSource({
   type: 'postgres',
@@ -33,7 +40,8 @@ const AppDataSource = new DataSource({
     UserEntity, SubjectEntity, TeacherEntity, SchoolClassEntity,
     RoomEntity, PeriodEntity, TaskEntity, TaskAssignmentEntity,
     LeaveApplicationEntity, ProxyAssignmentEntity, TimetableEntity,
-    AttendanceEntity, FeeEntity, ReportEntity,
+    AttendanceEntity, FeeEntity, ReportEntity, AcademicYearEntity,
+    TeacherLeaveBalanceEntity, StudentEntity,
   ],
   synchronize: true,
 });
@@ -60,40 +68,40 @@ const subjects: Partial<SubjectEntity>[] = [
 
 // ─── Teachers ────────────────────────────────────────────────────────────────
 const teachers: Partial<TeacherEntity>[] = [
-  { id: 'T-001', name: 'Anita Sharma',        shortName: 'A.Sharma',      employeeCode: 'T-001', email: 'anita.sharma@school.com',        phone: '+91-9000000001', subjectIds: ['SUB-001'], subjectNames: ['Mathematics'],        gradeLevel: ['Class 2','Class 3'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-002', name: 'Ravi Kumar',          shortName: 'R.Kumar',       employeeCode: 'T-002', email: 'ravi.kumar@school.com',          phone: '+91-9000000002', subjectIds: ['SUB-002'], subjectNames: ['Science'],            gradeLevel: ['Class 4','Class 5'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-003', name: 'Priya Nair',          shortName: 'P.Nair',        employeeCode: 'T-003', email: 'priya.nair@school.com',          phone: '+91-9000000003', subjectIds: ['SUB-003'], subjectNames: ['English'],            gradeLevel: ['Class 1','Class 2','Class 3'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-004', name: 'Suresh Iyer',         shortName: 'S.Iyer',        employeeCode: 'T-004', email: 'suresh.iyer@school.com',         phone: '+91-9000000004', subjectIds: ['SUB-004'], subjectNames: ['Social Studies'],     gradeLevel: ['Class 6','Class 7'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-005', name: 'Meera Joshi',         shortName: 'M.Joshi',       employeeCode: 'T-005', email: 'meera.joshi@school.com',         phone: '+91-9000000005', subjectIds: ['SUB-005'], subjectNames: ['Computer'],           gradeLevel: ['Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-006', name: 'Sunita Verma',        shortName: 'S.Verma',       employeeCode: 'T-006', email: 'sunita.verma@school.com',        phone: '+91-9000000006', subjectIds: ['SUB-006'], subjectNames: ['Hindi'],              gradeLevel: ['Class 1','Class 4'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-007', name: 'Amit Singh',          shortName: 'A.Singh',       employeeCode: 'T-007', email: 'amit.singh@school.com',          phone: '+91-9000000007', subjectIds: ['SUB-007'], subjectNames: ['Physics'],            gradeLevel: ['Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-008', name: 'Neha Gupta',          shortName: 'N.Gupta',       employeeCode: 'T-008', email: 'neha.gupta@school.com',          phone: '+91-9000000008', subjectIds: ['SUB-008'], subjectNames: ['Chemistry'],          gradeLevel: ['Class 8','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-009', name: 'Rahul Jain',          shortName: 'R.Jain',        employeeCode: 'T-009', email: 'rahul.jain@school.com',          phone: '+91-9000000009', subjectIds: ['SUB-009'], subjectNames: ['Biology'],            gradeLevel: ['Class 7','Class 8'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-010', name: 'Kavita Mehra',        shortName: 'K.Mehra',       employeeCode: 'T-010', email: 'kavita.mehra@school.com',        phone: '+91-9000000010', subjectIds: ['SUB-010'], subjectNames: ['Geography'],          gradeLevel: ['Class 6','Class 9'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-011', name: 'Deepak Saini',        shortName: 'D.Saini',       employeeCode: 'T-011', email: 'deepak.saini@school.com',        phone: '+91-9000000011', subjectIds: ['SUB-001'], subjectNames: ['Mathematics'],        gradeLevel: ['Class 1','Class 4'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-012', name: 'Shalini Rao',         shortName: 'S.Rao',         employeeCode: 'T-012', email: 'shalini.rao@school.com',         phone: '+91-9000000012', subjectIds: ['SUB-003'], subjectNames: ['English'],            gradeLevel: ['Class 5','Class 6'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-013', name: 'Vikram Patel',        shortName: 'V.Patel',       employeeCode: 'T-013', email: 'vikram.patel@school.com',        phone: '+91-9000000013', subjectIds: ['SUB-007'], subjectNames: ['Physics'],            gradeLevel: ['Class 8','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-014', name: 'Manisha Roy',         shortName: 'M.Roy',         employeeCode: 'T-014', email: 'manisha.roy@school.com',         phone: '+91-9000000014', subjectIds: ['SUB-008'], subjectNames: ['Chemistry'],          gradeLevel: ['Class 7','Class 9'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-015', name: 'Ajay Singh',          shortName: 'A.Singh',       employeeCode: 'T-015', email: 'ajay.singh@school.com',          phone: '+91-9000000015', subjectIds: ['SUB-009'], subjectNames: ['Biology'],            gradeLevel: ['Class 5','Class 6'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-016', name: 'Nisha Jain',          shortName: 'N.Jain',        employeeCode: 'T-016', email: 'nisha.jain@school.com',          phone: '+91-9000000016', subjectIds: ['SUB-006'], subjectNames: ['Hindi'],              gradeLevel: ['Class 2','Class 3'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-017', name: 'Rakesh Mehta',        shortName: 'R.Mehta',       employeeCode: 'T-017', email: 'rakesh.mehta@school.com',        phone: '+91-9000000017', subjectIds: ['SUB-005'], subjectNames: ['Computer'],           gradeLevel: ['Class 4','Class 7'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-018', name: 'Pooja Sharma',        shortName: 'P.Sharma',      employeeCode: 'T-018', email: 'pooja.sharma@school.com',        phone: '+91-9000000018', subjectIds: ['SUB-001'], subjectNames: ['Mathematics'],        gradeLevel: ['Class 8','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-019', name: 'Sanjay Gupta',        shortName: 'S.Gupta',       employeeCode: 'T-019', email: 'sanjay.gupta@school.com',        phone: '+91-9000000019', subjectIds: ['SUB-002'], subjectNames: ['Science'],            gradeLevel: ['Class 1','Class 2'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-020', name: 'Alka Mishra',         shortName: 'A.Mishra',      employeeCode: 'T-020', email: 'alka.mishra@school.com',         phone: '+91-9000000020', subjectIds: ['SUB-003'], subjectNames: ['English'],            gradeLevel: ['Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-021', name: 'Divya Reddy',         shortName: 'D.Reddy',       employeeCode: 'T-021', email: 'divya.reddy@school.com',         phone: '+91-9000000021', subjectIds: ['SUB-003'], subjectNames: ['English'],            gradeLevel: ['Class 4','Class 7','Class 8','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-022', name: 'Harshit Agarwal',     shortName: 'H.Agarwal',     employeeCode: 'T-022', email: 'harshit.agarwal@school.com',     phone: '+91-9000000022', subjectIds: ['SUB-003'], subjectNames: ['English'],            gradeLevel: ['Class 6'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-023', name: 'Anjali Pandey',       shortName: 'A.Pandey',      employeeCode: 'T-023', email: 'anjali.pandey@school.com',       phone: '+91-9000000023', subjectIds: ['SUB-006'], subjectNames: ['Hindi'],              gradeLevel: ['Class 3','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-024', name: 'Sameer Khan',         shortName: 'S.Khan',        employeeCode: 'T-024', email: 'sameer.khan@school.com',         phone: '+91-9000000024', subjectIds: ['SUB-013'], subjectNames: ['German'],             gradeLevel: ['Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-025', name: 'Ritika Desai',        shortName: 'R.Desai',       employeeCode: 'T-025', email: 'ritika.desai@school.com',        phone: '+91-9000000025', subjectIds: ['SUB-001'], subjectNames: ['Mathematics'],        gradeLevel: ['Class 5','Class 6','Class 7','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-026', name: 'Pradeep Bhat',        shortName: 'P.Bhat',        employeeCode: 'T-026', email: 'pradeep.bhat@school.com',        phone: '+91-9000000026', subjectIds: ['SUB-014'], subjectNames: ['EVS'],                gradeLevel: ['Class 1','Class 2','Class 3','Class 4','Class 5'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-027', name: 'Varun Chopra',        shortName: 'V.Chopra',      employeeCode: 'T-027', email: 'varun.chopra@school.com',        phone: '+91-9000000027', subjectIds: ['SUB-005'], subjectNames: ['Computer'],           gradeLevel: ['Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-028', name: 'Nikhil Sharma',       shortName: 'N.Sharma',      employeeCode: 'T-028', email: 'nikhil.sharma@school.com',       phone: '+91-9000000028', subjectIds: ['SUB-007'], subjectNames: ['Physics'],            gradeLevel: ['Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-029', name: 'Sneha Kapoor',        shortName: 'S.Kapoor',      employeeCode: 'T-029', email: 'sneha.kapoor@school.com',        phone: '+91-9000000029', subjectIds: ['SUB-008'], subjectNames: ['Chemistry'],          gradeLevel: ['Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-030', name: 'Aditi Verma',         shortName: 'A.Verma',       employeeCode: 'T-030', email: 'aditi.verma@school.com',         phone: '+91-9000000030', subjectIds: ['SUB-009'], subjectNames: ['Biology'],            gradeLevel: ['Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-031', name: 'Ramesh Kulkarni',     shortName: 'R.Kulkarni',    employeeCode: 'T-031', email: 'ramesh.kulkarni@school.com',     phone: '+91-9000000031', subjectIds: ['SUB-011'], subjectNames: ['History'],            gradeLevel: ['Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-032', name: 'Geeta Bhattacharya', shortName: 'G.Bhattacharya', employeeCode: 'T-032', email: 'geeta.bhattacharya@school.com', phone: '+91-9000000032', subjectIds: ['SUB-012'], subjectNames: ['Civics'],             gradeLevel: ['Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-033', name: 'Vikas Arora',         shortName: 'V.Arora',       employeeCode: 'T-033', email: 'vikas.arora@school.com',         phone: '+91-9000000033', subjectIds: ['SUB-015'], subjectNames: ['A&C'],                gradeLevel: ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
-  { id: 'T-034', name: 'Suresh Thakur',       shortName: 'S.Thakur',      employeeCode: 'T-034', email: 'suresh.thakur@school.com',       phone: '+91-9000000034', subjectIds: ['SUB-016'], subjectNames: ['Physical Education'], gradeLevel: ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-001', name: 'Anita Sharma',        shortName: 'A.Sharma',      employeeCode: 'T-001', email: 'anita.sharma@school.com',        phone: '+91-9000000001', subjectIds: ['SUB-001'], subjectNames: ['Mathematics'],        subjectId: 'SUB-001', gradeLevel: ['Class 2','Class 3'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-002', name: 'Ravi Kumar',          shortName: 'R.Kumar',       employeeCode: 'T-002', email: 'ravi.kumar@school.com',          phone: '+91-9000000002', subjectIds: ['SUB-002'], subjectNames: ['Science'],            subjectId: 'SUB-002', gradeLevel: ['Class 4','Class 5'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-003', name: 'Priya Nair',          shortName: 'P.Nair',        employeeCode: 'T-003', email: 'priya.nair@school.com',          phone: '+91-9000000003', subjectIds: ['SUB-003'], subjectNames: ['English'],            subjectId: 'SUB-003', gradeLevel: ['Class 1','Class 2','Class 3'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-004', name: 'Suresh Iyer',         shortName: 'S.Iyer',        employeeCode: 'T-004', email: 'suresh.iyer@school.com',         phone: '+91-9000000004', subjectIds: ['SUB-004'], subjectNames: ['Social Studies'],     subjectId: 'SUB-004', gradeLevel: ['Class 6','Class 7'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-005', name: 'Meera Joshi',         shortName: 'M.Joshi',       employeeCode: 'T-005', email: 'meera.joshi@school.com',         phone: '+91-9000000005', subjectIds: ['SUB-005'], subjectNames: ['Computer'],           subjectId: 'SUB-005', gradeLevel: ['Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-006', name: 'Sunita Verma',        shortName: 'S.Verma',       employeeCode: 'T-006', email: 'sunita.verma@school.com',        phone: '+91-9000000006', subjectIds: ['SUB-006'], subjectNames: ['Hindi'],              subjectId: 'SUB-006', gradeLevel: ['Class 1','Class 4'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-007', name: 'Amit Singh',          shortName: 'A.Singh',       employeeCode: 'T-007', email: 'amit.singh@school.com',          phone: '+91-9000000007', subjectIds: ['SUB-007'], subjectNames: ['Physics'],            subjectId: 'SUB-007', gradeLevel: ['Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-008', name: 'Neha Gupta',          shortName: 'N.Gupta',       employeeCode: 'T-008', email: 'neha.gupta@school.com',          phone: '+91-9000000008', subjectIds: ['SUB-008'], subjectNames: ['Chemistry'],          subjectId: 'SUB-008', gradeLevel: ['Class 8','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-009', name: 'Rahul Jain',          shortName: 'R.Jain',        employeeCode: 'T-009', email: 'rahul.jain@school.com',          phone: '+91-9000000009', subjectIds: ['SUB-009'], subjectNames: ['Biology'],            subjectId: 'SUB-009', gradeLevel: ['Class 7','Class 8'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-010', name: 'Kavita Mehra',        shortName: 'K.Mehra',       employeeCode: 'T-010', email: 'kavita.mehra@school.com',        phone: '+91-9000000010', subjectIds: ['SUB-010'], subjectNames: ['Geography'],          subjectId: 'SUB-010', gradeLevel: ['Class 6','Class 9'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-011', name: 'Deepak Saini',        shortName: 'D.Saini',       employeeCode: 'T-011', email: 'deepak.saini@school.com',        phone: '+91-9000000011', subjectIds: ['SUB-001'], subjectNames: ['Mathematics'],        subjectId: 'SUB-001', gradeLevel: ['Class 1','Class 4'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-012', name: 'Shalini Rao',         shortName: 'S.Rao',         employeeCode: 'T-012', email: 'shalini.rao@school.com',         phone: '+91-9000000012', subjectIds: ['SUB-003'], subjectNames: ['English'],            subjectId: 'SUB-003', gradeLevel: ['Class 5','Class 6'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-013', name: 'Vikram Patel',        shortName: 'V.Patel',       employeeCode: 'T-013', email: 'vikram.patel@school.com',        phone: '+91-9000000013', subjectIds: ['SUB-007'], subjectNames: ['Physics'],            subjectId: 'SUB-007', gradeLevel: ['Class 8','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-014', name: 'Manisha Roy',         shortName: 'M.Roy',         employeeCode: 'T-014', email: 'manisha.roy@school.com',         phone: '+91-9000000014', subjectIds: ['SUB-008'], subjectNames: ['Chemistry'],          subjectId: 'SUB-008', gradeLevel: ['Class 7','Class 9'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-015', name: 'Ajay Singh',          shortName: 'A.Singh',       employeeCode: 'T-015', email: 'ajay.singh@school.com',          phone: '+91-9000000015', subjectIds: ['SUB-009'], subjectNames: ['Biology'],            subjectId: 'SUB-009', gradeLevel: ['Class 5','Class 6'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-016', name: 'Nisha Jain',          shortName: 'N.Jain',        employeeCode: 'T-016', email: 'nisha.jain@school.com',          phone: '+91-9000000016', subjectIds: ['SUB-006'], subjectNames: ['Hindi'],              subjectId: 'SUB-006', gradeLevel: ['Class 2','Class 3'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-017', name: 'Rakesh Mehta',        shortName: 'R.Mehta',       employeeCode: 'T-017', email: 'rakesh.mehta@school.com',        phone: '+91-9000000017', subjectIds: ['SUB-005'], subjectNames: ['Computer'],           subjectId: 'SUB-005', gradeLevel: ['Class 4','Class 7'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-018', name: 'Pooja Sharma',        shortName: 'P.Sharma',      employeeCode: 'T-018', email: 'pooja.sharma@school.com',        phone: '+91-9000000018', subjectIds: ['SUB-001'], subjectNames: ['Mathematics'],        subjectId: 'SUB-001', gradeLevel: ['Class 8','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-019', name: 'Sanjay Gupta',        shortName: 'S.Gupta',       employeeCode: 'T-019', email: 'sanjay.gupta@school.com',        phone: '+91-9000000019', subjectIds: ['SUB-002'], subjectNames: ['Science'],            subjectId: 'SUB-002', gradeLevel: ['Class 1','Class 2'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-020', name: 'Alka Mishra',         shortName: 'A.Mishra',      employeeCode: 'T-020', email: 'alka.mishra@school.com',         phone: '+91-9000000020', subjectIds: ['SUB-003'], subjectNames: ['English'],            subjectId: 'SUB-003', gradeLevel: ['Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-021', name: 'Divya Reddy',         shortName: 'D.Reddy',       employeeCode: 'T-021', email: 'divya.reddy@school.com',         phone: '+91-9000000021', subjectIds: ['SUB-003'], subjectNames: ['English'],            subjectId: 'SUB-003', gradeLevel: ['Class 4','Class 7','Class 8','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-022', name: 'Harshit Agarwal',     shortName: 'H.Agarwal',     employeeCode: 'T-022', email: 'harshit.agarwal@school.com',     phone: '+91-9000000022', subjectIds: ['SUB-003'], subjectNames: ['English'],            subjectId: 'SUB-003', gradeLevel: ['Class 6'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-023', name: 'Anjali Pandey',       shortName: 'A.Pandey',      employeeCode: 'T-023', email: 'anjali.pandey@school.com',       phone: '+91-9000000023', subjectIds: ['SUB-006'], subjectNames: ['Hindi'],              subjectId: 'SUB-006', gradeLevel: ['Class 3','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-024', name: 'Sameer Khan',         shortName: 'S.Khan',        employeeCode: 'T-024', email: 'sameer.khan@school.com',         phone: '+91-9000000024', subjectIds: ['SUB-013'], subjectNames: ['German'],             subjectId: 'SUB-013', gradeLevel: ['Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-025', name: 'Ritika Desai',        shortName: 'R.Desai',       employeeCode: 'T-025', email: 'ritika.desai@school.com',        phone: '+91-9000000025', subjectIds: ['SUB-001'], subjectNames: ['Mathematics'],        subjectId: 'SUB-001', gradeLevel: ['Class 5','Class 6','Class 7','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-026', name: 'Pradeep Bhat',        shortName: 'P.Bhat',        employeeCode: 'T-026', email: 'pradeep.bhat@school.com',        phone: '+91-9000000026', subjectIds: ['SUB-014'], subjectNames: ['EVS'],                subjectId: 'SUB-014', gradeLevel: ['Class 1','Class 2','Class 3','Class 4','Class 5'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-027', name: 'Varun Chopra',        shortName: 'V.Chopra',      employeeCode: 'T-027', email: 'varun.chopra@school.com',        phone: '+91-9000000027', subjectIds: ['SUB-005'], subjectNames: ['Computer'],           subjectId: 'SUB-005', gradeLevel: ['Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-028', name: 'Nikhil Sharma',       shortName: 'N.Sharma',      employeeCode: 'T-028', email: 'nikhil.sharma@school.com',       phone: '+91-9000000028', subjectIds: ['SUB-007'], subjectNames: ['Physics'],            subjectId: 'SUB-007', gradeLevel: ['Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-029', name: 'Sneha Kapoor',        shortName: 'S.Kapoor',      employeeCode: 'T-029', email: 'sneha.kapoor@school.com',        phone: '+91-9000000029', subjectIds: ['SUB-008'], subjectNames: ['Chemistry'],          subjectId: 'SUB-008', gradeLevel: ['Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-030', name: 'Aditi Verma',         shortName: 'A.Verma',       employeeCode: 'T-030', email: 'aditi.verma@school.com',         phone: '+91-9000000030', subjectIds: ['SUB-009'], subjectNames: ['Biology'],            subjectId: 'SUB-009', gradeLevel: ['Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-031', name: 'Ramesh Kulkarni',     shortName: 'R.Kulkarni',    employeeCode: 'T-031', email: 'ramesh.kulkarni@school.com',     phone: '+91-9000000031', subjectIds: ['SUB-011'], subjectNames: ['History'],            subjectId: 'SUB-011', gradeLevel: ['Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-032', name: 'Geeta Bhattacharya', shortName: 'G.Bhattacharya', employeeCode: 'T-032', email: 'geeta.bhattacharya@school.com', phone: '+91-9000000032', subjectIds: ['SUB-012'], subjectNames: ['Civics'],             subjectId: 'SUB-012', gradeLevel: ['Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-033', name: 'Vikas Arora',         shortName: 'V.Arora',       employeeCode: 'T-033', email: 'vikas.arora@school.com',         phone: '+91-9000000033', subjectIds: ['SUB-015'], subjectNames: ['A&C'],                subjectId: 'SUB-015', gradeLevel: ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
+  { id: 'T-034', name: 'Suresh Thakur',       shortName: 'S.Thakur',      employeeCode: 'T-034', email: 'suresh.thakur@school.com',       phone: '+91-9000000034', subjectIds: ['SUB-016'], subjectNames: ['Physical Education'], subjectId: 'SUB-016', gradeLevel: ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'], maxPeriodsDay: 6, maxPeriodsWeek: 30, status: 'active', schoolId: 'school_001' },
 ];
 
 // ─── Classes ─────────────────────────────────────────────────────────────────
@@ -139,6 +147,20 @@ const periods: Partial<PeriodEntity>[] = [
   { id: 'PER-011', number: 11, startTime: '14:15', endTime: '15:00', isBreak: false, label: 'Period 8',      schoolId: 'school_001' },
 ];
 
+async function buildTeacherUsers() {
+  const passwordHash = await bcrypt.hash(DEFAULT_TEACHER_PASSWORD, 12);
+
+  return teachers.map((teacher) => ({
+    name: teacher.name!,
+    email: teacher.email!,
+    passwordHash,
+    role: Role.TEACHER,
+    teacherId: teacher.id!,
+    schoolId: teacher.schoolId || 'school_001',
+    refreshTokenHash: null,
+  }));
+}
+
 // ─── Runner ──────────────────────────────────────────────────────────────────
 async function upsertAll<T>(
   repo: any,
@@ -150,18 +172,60 @@ async function upsertAll<T>(
   console.log(` ${data.length} rows OK`);
 }
 
+const academicYears: Partial<AcademicYearEntity>[] = [
+  { id: 1, name: '2025-2026', startDate: '2025-04-01', endDate: '2026-03-31', isActive: true, schoolId: 'school_001' },
+];
+
 async function seed() {
   console.log('\n🚀 Connecting to PostgreSQL...');
   await AppDataSource.initialize();
   console.log('✅ Connected\n');
+
+  const teacherUsers = await buildTeacherUsers();
 
   await upsertAll(AppDataSource.getRepository(SubjectEntity),     subjects, 'subjects    (16)');
   await upsertAll(AppDataSource.getRepository(TeacherEntity),     teachers, 'teachers    (34)');
   await upsertAll(AppDataSource.getRepository(SchoolClassEntity), classes,  'classes     (10)');
   await upsertAll(AppDataSource.getRepository(RoomEntity),        rooms,    'rooms       (10)');
   await upsertAll(AppDataSource.getRepository(PeriodEntity),      periods,  'periods     (11)');
+  
+  process.stdout.write('Seeding academic years (1)...');
+  await AppDataSource.getRepository(AcademicYearEntity).upsert(academicYears, ['name']);
+  console.log(' 1 rows OK');
+  
+  // SEED LEAVE BALANCES
+  const activeYear = await AppDataSource.getRepository(AcademicYearEntity).findOne({ where: { isActive: true } });
+  if (activeYear) {
+    process.stdout.write('Seeding teacher leave balances...');
+    const balances = teachers.map(t => ({
+      teacherId: t.id,
+      academicYearId: activeYear.id,
+      totalLeaves: 20,
+      usedLeaves: 0,
+      remainingLeaves: 20,
+      schoolId: 'school_001'
+    }));
+    await AppDataSource.getRepository(TeacherLeaveBalanceEntity).upsert(balances, ['teacherId', 'academicYearId']);
+    console.log(` ${balances.length} rows OK`);
+  }
 
-  console.log('\n🎉 Seed complete!\n');
+  process.stdout.write('Seeding teacher users (34)...');
+  await AppDataSource.getRepository(UserEntity).upsert(teacherUsers, ['email']);
+  console.log(' 34 rows OK');
+
+  process.stdout.write('Seeding demo students (5)...');
+  const studentPasswordHash = await bcrypt.hash('12345', 12);
+  const demoStudents: Partial<StudentEntity>[] = [
+    { studentId: "ST101", fullName: "Rahul Sharma", passwordHash: studentPasswordHash, className: "Class 10", section: "A" },
+    { studentId: "ST102", fullName: "Priya Verma", passwordHash: studentPasswordHash, className: "Class 9", section: "B" },
+    { studentId: "ST103", fullName: "Aman Singh", passwordHash: studentPasswordHash, className: "Class 8", section: "A" },
+    { studentId: "ST104", fullName: "Sneha Gupta", passwordHash: studentPasswordHash, className: "Class 7", section: "C" },
+    { studentId: "ST105", fullName: "Arjun Mehta", passwordHash: studentPasswordHash, className: "Class 6", section: "B" }
+  ];
+  await AppDataSource.getRepository(StudentEntity).upsert(demoStudents, ['studentId']);
+  console.log(' 5 rows OK');
+
+  console.log(`\n🎉 Seed complete! Default teacher password: ${DEFAULT_TEACHER_PASSWORD}\n`);
   await AppDataSource.destroy();
 }
 

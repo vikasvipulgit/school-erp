@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { UserEntity } from '../database/entities/user.entity';
+import { StudentEntity } from '../database/entities/student.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { Role } from '../common/enums/role.enum';
@@ -19,9 +20,11 @@ export class AuthService {
   constructor(
     @InjectRepository(UserEntity)
     private userRepo: Repository<UserEntity>,
+    @InjectRepository(StudentEntity)
+    private studentRepo: Repository<StudentEntity>,
     private jwtService: JwtService,
     private config: ConfigService,
-  ) {}
+  ) { }
 
   async register(dto: RegisterDto) {
     const exists = await this.userRepo.findOne({ where: { email: dto.email } });
@@ -54,6 +57,39 @@ export class AuthService {
     await this.saveRefreshToken(user.id, tokens.refreshToken);
 
     return { user: this.sanitize(user), ...tokens };
+  }
+
+  async validateStudent(studentId: string, pass: string) {
+    const student = await this.studentRepo.findOne({ where: { studentId } });
+    if (!student) throw new UnauthorizedException('Invalid student credentials');
+
+    const valid = await bcrypt.compare(pass, student.passwordHash);
+    if (!valid) throw new UnauthorizedException('Invalid student credentials');
+
+    const payload = { sub: student.id, studentId: student.studentId, role: Role.STUDENT };
+
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(payload, {
+        secret: this.config.get<string>('JWT_ACCESS_SECRET'),
+        expiresIn: this.config.get<string>('JWT_ACCESS_EXPIRY', '15m'),
+      }),
+      this.jwtService.signAsync(payload, {
+        secret: this.config.get<string>('JWT_REFRESH_SECRET'),
+        expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRY', '7d'),
+      }),
+    ]);
+
+    const hash = await bcrypt.hash(refreshToken, 10);
+    await this.studentRepo.update(student.id, { refreshTokenHash: hash });
+
+    const { passwordHash, refreshTokenHash, ...safeStudent } = student;
+
+    return {
+      user: { ...safeStudent, role: Role.STUDENT },
+      accessToken,
+      refreshToken,
+      role: Role.STUDENT
+    };
   }
 
   async refresh(rawToken: string) {

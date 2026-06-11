@@ -64,6 +64,7 @@ export const API_ENDPOINTS = {
   },
   leave: {
     list: '/leave',
+    my: '/leave/my',
     get: (id) => `/leave/${id}`,
     submit: '/leave',
     approve: (id) => `/leave/${id}/approve`,
@@ -82,6 +83,7 @@ export const API_ENDPOINTS = {
     publish: '/timetable/publish',
     publishById: (id) => `/timetable/${id}/publish`,
     settings: '/timetable/settings',
+    delete: (classId) => `/timetable/${classId}`,
   },
   attendance: {
     list: '/attendance',
@@ -102,5 +104,15 @@ export const API_ENDPOINTS = {
     get: (id) => `/reports/${id}`,
     create: '/reports',
     remove: (id) => `/reports/${id}`,
+    substitution: (date) => `/reports/substitution?date=${date}`,
+    pendingTasks: '/reports/tasks/pending',
+    overdueTasks: '/reports/tasks/overdue',
+  },
+  feedback: {
+    base: '/feedback',
+    my: '/feedback/my',
+    sent: '/feedback/sent',
+    teachers: '/feedback/teachers',
+    item: (id) => `/feedback/${id}`,
   },
 };

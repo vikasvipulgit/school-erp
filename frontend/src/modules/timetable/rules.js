@@ -1,3 +1,5 @@
+import { getWorkingDays } from './periodUtils';
+
 const RULES_KEY = 'erp_timetable_rules';
 
 export const DEFAULT_RULES = {
@@ -20,9 +22,7 @@ export const saveTimetableRules = (rules) => {
   localStorage.setItem(RULES_KEY, JSON.stringify(rules));
 };
 
-const HOLIDAY_DAYS = new Set(['Sat']);
-
-export const isHolidayDay = (day) => HOLIDAY_DAYS.has(day);
+export const isHolidayDay = (day) => !getWorkingDays().includes(day);
 
 export const getSubjectAvailability = (subjectsData, subjectName, fallback = 20) => {
   const subject = subjectsData.find((s) => s.name === subjectName);
@@ -87,10 +87,8 @@ export const getTeacherPeriodsForDay = (gridsByClass, teacherName, dayIndex) => 
 
 export const canAssignSubjectForClass = ({ subjectsData, gridsByClass, classKey, subjectName }) => {
   const { maxPeriodsPerSubject } = getTimetableRules();
-  const available = getSubjectAvailability(subjectsData, subjectName);
-  const usedGlobal = getUsedPeriodsForSubject(gridsByClass, subjectName);
   const usedClass = getUsedPeriodsForSubjectInClass(gridsByClass, classKey, subjectName);
-  return usedGlobal < available && usedClass < maxPeriodsPerSubject;
+  return usedClass < maxPeriodsPerSubject;
 };
 
 export const canAssignSubjectForClassDay = ({ gridsByClass, classKey, subjectName, dayIndex }) => {
@@ -109,15 +107,10 @@ export const canAssignTeacherForDay = (gridsByClass, teacherName, dayIndex, curr
 
 export const getAvailabilityStatus = ({ subjectsData, gridsByClass, selectedClass, subjectName }) => {
   const { maxPeriodsPerSubject } = getTimetableRules();
-  const available = getSubjectAvailability(subjectsData, subjectName);
-  const used = getUsedPeriodsForSubject(gridsByClass, subjectName);
   const usedClass = selectedClass
     ? getUsedPeriodsForSubjectInClass(gridsByClass, selectedClass, subjectName)
     : 0;
   return {
-    available,
-    used,
-    remaining: available - used,
     usedClass,
     classRemaining: maxPeriodsPerSubject - usedClass,
   };

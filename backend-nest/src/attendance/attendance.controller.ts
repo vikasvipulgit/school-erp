@@ -1,41 +1,82 @@
 import {
-  Controller, Get, Post, Patch,
-  Param, Body, UseGuards,
+  Controller, Post, Get, Patch, Body, Param, Res, Query, UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AttendanceService } from './attendance.service';
 import { MarkAttendanceDto, UpdateAttendanceDto } from './dto/attendance.dto';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import { MinRole } from '../auth/decorators/min-role.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Role } from '../common/enums/role.enum';
 
-@ApiTags('Attendance')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
-@MinRole(Role.TEACHER)
+// Shape returned by JwtStrategy.validate()
+interface AuthUser {
+  id: string;         // UUID — for staff/teacher/admin
+  studentId?: string; // e.g. ST101 — ONLY for students
+  role: Role;
+  teacherId?: string;
+  schoolId?: string;
+}
+
 @Controller('attendance')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class AttendanceController {
-  constructor(private readonly svc: AttendanceService) {}
+  constructor(private readonly attendanceService: AttendanceService) {}
 
-  @Get()
-  @ApiOperation({ summary: 'List attendance records (teacher+)' })
-  findAll() { return this.svc.findAll(); }
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get attendance record by id' })
-  findOne(@Param('id') id: string) { return this.svc.findOne(id); }
-
-  @Post()
-  @ApiOperation({ summary: 'Mark attendance (teacher+)' })
-  mark(@Body() dto: MarkAttendanceDto, @CurrentUser() user: any) {
-    return this.svc.mark(dto, user);
+  // Only teachers, admins, principals can mark attendance
+  @Post('mark')
+  @Roles(Role.TEACHER, Role.ADMIN, Role.PRINCIPAL)
+  async markAttendance(
+    @Body() dto: MarkAttendanceDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.attendanceService.markAttendance(dto, user.id);
   }
 
+  // Only students can access their own attendance via /me
+  @Get('student/me')
+  @Roles(Role.STUDENT)
+  async getMyAttendance(@CurrentUser() user: AuthUser) {
+    // user.studentId is ST101 — set by JwtStrategy for student tokens
+    return this.attendanceService.getStudentAttendanceSummary(user.studentId);
+  }
+
+  // Teachers/admins can view class attendance
+  @Get('class/:id')
+  @Roles(Role.TEACHER, Role.ADMIN, Role.PRINCIPAL)
+  async getClassAttendance(
+    @Param('id') classId: string,
+    @Query('date') date: string,
+  ) {
+    return this.attendanceService.getClassAttendance(classId, date);
+  }
+
+  // Admin/principal can look up any student by their studentId (ST101)
+  @Get('summary/student/:id')
+  @Roles(Role.ADMIN, Role.PRINCIPAL)
+  async getStudentSummary(@Param('id') studentId: string) {
+    return this.attendanceService.getStudentAttendanceSummary(studentId);
+  }
+
+  // Teachers can edit within 24h; admins/principals anytime
   @Patch(':id')
-  @ApiOperation({ summary: 'Update attendance record (teacher+)' })
-  update(@Param('id') id: string, @Body() dto: UpdateAttendanceDto) {
-    return this.svc.update(id, dto);
+  @Roles(Role.TEACHER, Role.ADMIN, Role.PRINCIPAL)
+  async updateAttendance(
+    @Param('id') id: string,
+    @Body() dto: UpdateAttendanceDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.attendanceService.updateAttendance(id, dto, user.role);
+  }
+
+  // Student downloads their own CSV report
+  @Get('student/me/report')
+  @Roles(Role.STUDENT)
+  async getMyReport(@CurrentUser() user: AuthUser, @Res() res: Response) {
+    const csv = await this.attendanceService.getStudentAttendanceReportCSV(user.studentId);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=attendance_report.csv');
+    return res.send(csv);
   }
 }

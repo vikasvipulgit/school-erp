@@ -1,36 +1,88 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Calendar, Info } from 'lucide-react';
 import { useAuth } from '@/core/context/AuthContext';
-import { submitLeaveApplication } from '@/modules/leave/services/leaveFirebaseService';
-import teachersData from '@/data/teachers.json';
+import { submitLeaveApplication, getLeaveStats } from '@/modules/leave/services/leaveService';
+import { useTeachers } from '@/core/hooks/useTeachers';
 
 const LEAVE_TYPES = ['sick', 'casual', 'emergency', 'other'];
 
 export default function LeaveApplicationPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { teachers } = useTeachers();
 
-  const teacher = teachersData.find(
+  const teacher = teachers.find(
     (t) => t.name === user?.displayName || t.email === user?.email
   );
 
   const [leaveType, setLeaveType] = useState('sick');
+  const [leaveDuration, setLeaveDuration] = useState('FULL_DAY');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState('');
+  const [stats, setStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
 
   const today = new Date().toISOString().split('T')[0];
+
+  useEffect(() => {
+    async function fetchStats() {
+      try {
+        const data = await getLeaveStats();
+        setStats(data);
+      } catch (err) {
+        console.error('Failed to fetch leave stats', err);
+      } finally {
+        setStatsLoading(false);
+      }
+    }
+    fetchStats();
+  }, []);
+
+  const isWeekend = (dateStr) => {
+    const day = new Date(dateStr).getDay();
+    return day === 0 || day === 6;
+  };
+
+  const calculateDeduction = () => {
+    if (leaveDuration === 'HALF_DAY') return 0.5;
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end >= start) {
+        const diffTime = end.getTime() - start.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays + 1;
+      }
+    }
+    return 1;
+  };
 
   const validate = () => {
     const e = {};
     if (!startDate) e.startDate = 'Start date is required';
     if (!endDate) e.endDate = 'End date is required';
-    if (startDate && endDate && endDate < startDate) e.endDate = 'End date must be on or after start date';
+    
+    if (leaveDuration === 'HALF_DAY') {
+      if (startDate !== endDate) {
+        e.endDate = 'Half-day leave must be for a single date';
+      }
+    }
+
     if (startDate && startDate < today) e.startDate = 'Start date cannot be in the past';
+    if (startDate && isWeekend(startDate)) e.startDate = 'Leave cannot start on a weekend';
+    if (endDate && isWeekend(endDate)) e.endDate = 'Leave cannot end on a weekend';
+    if (startDate && endDate && endDate < startDate) e.endDate = 'End date must be on or after start date';
+    
+    const deduction = calculateDeduction();
+    if (stats && stats.remainingLeaves < deduction) {
+      e.submit = 'Insufficient leave balance';
+    }
+
     return e;
   };
 
@@ -38,13 +90,17 @@ export default function LeaveApplicationPage() {
     e.preventDefault();
     setSubmitError('');
     const errs = validate();
-    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+    if (Object.keys(errs).length > 0) { 
+      setErrors(errs); 
+      if (errs.submit) setSubmitError(errs.submit);
+      return; 
+    }
 
     setSaving(true);
     try {
       await submitLeaveApplication({
-        teacherId: teacher?.id || user?.uid,
         leaveType,
+        leaveDuration,
         startDate,
         endDate,
         reason: reason.trim(),
@@ -74,23 +130,63 @@ export default function LeaveApplicationPage() {
         <p className="text-sm text-gray-500 mt-1">Submit a leave request for administrator approval</p>
       </div>
 
+      {/* Stats Card */}
+      {!statsLoading && stats && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6 grid grid-cols-3 gap-4 shadow-sm">
+          <div className="text-center">
+            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Total</div>
+            <div className="text-xl font-bold text-gray-900">{stats.totalLeaves}</div>
+          </div>
+          <div className="text-center border-x border-gray-100">
+            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Used</div>
+            <div className="text-xl font-bold text-orange-600">{stats.usedLeaves}</div>
+          </div>
+          <div className="text-center">
+            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Remaining</div>
+            <div className="text-xl font-bold text-emerald-600">{stats.remainingLeaves}</div>
+          </div>
+          <div className="col-span-3 mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-emerald-500" 
+              style={{ width: `${(stats.usedLeaves / stats.totalLeaves) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
         {submitError && (
           <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
             {submitError}
           </div>
         )}
-        {teacher && (
-          <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-4 py-3">
-            <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-semibold text-sm">
-              {teacher.name[0]}
-            </div>
-            <div>
-              <div className="text-sm font-medium text-gray-900">{teacher.name}</div>
-              <div className="text-xs text-gray-400">{teacher.subject}</div>
-            </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2 text-center">Leave Duration</label>
+          <div className="flex bg-gray-100 p-1 rounded-lg">
+            <button
+              type="button"
+              onClick={() => { setLeaveDuration('FULL_DAY'); setEndDate(''); }}
+              className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${
+                leaveDuration === 'FULL_DAY' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Full Day
+            </button>
+            <button
+              type="button"
+              onClick={() => { 
+                setLeaveDuration('HALF_DAY'); 
+                if (startDate) setEndDate(startDate); 
+              }}
+              className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${
+                leaveDuration === 'HALF_DAY' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Half Day (0.5)
+            </button>
           </div>
-        )}
+        </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Leave Type</label>
@@ -115,30 +211,36 @@ export default function LeaveApplicationPage() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Start Date <span className="text-red-500">*</span>
+              {leaveDuration === 'HALF_DAY' ? 'Date' : 'Start Date'} <span className="text-red-500">*</span>
             </label>
             <input
               type="date"
               value={startDate}
               min={today}
-              onChange={(e) => { setStartDate(e.target.value); setErrors((p) => ({ ...p, startDate: '' })); }}
+              onChange={(e) => { 
+                setStartDate(e.target.value); 
+                if (leaveDuration === 'HALF_DAY') setEndDate(e.target.value);
+                setErrors((p) => ({ ...p, startDate: '' })); 
+              }}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
             />
             {err('startDate')}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              End Date <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="date"
-              value={endDate}
-              min={startDate || today}
-              onChange={(e) => { setEndDate(e.target.value); setErrors((p) => ({ ...p, endDate: '' })); }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
-            />
-            {err('endDate')}
-          </div>
+          {leaveDuration === 'FULL_DAY' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                End Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={endDate}
+                min={startDate || today}
+                onChange={(e) => { setEndDate(e.target.value); setErrors((p) => ({ ...p, endDate: '' })); }}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              />
+              {err('endDate')}
+            </div>
+          )}
         </div>
 
         <div>
@@ -152,9 +254,12 @@ export default function LeaveApplicationPage() {
           />
         </div>
 
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 text-xs text-yellow-800">
-          Your leave application will be reviewed by the Administrator or Principal.
-          You will be notified once a decision is made.
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 text-[10px] text-yellow-800 flex gap-2 items-start">
+          <Info size={14} className="shrink-0 mt-0.5" />
+          <p>
+            Your leave application will be reviewed by the Administrator or Principal.
+            {leaveDuration === 'HALF_DAY' ? ' Half-day leave will deduct 0.5 from your balance.' : ` This leave will deduct ${calculateDeduction()} days from your balance.`}
+          </p>
         </div>
 
         <div className="flex justify-end gap-3 pt-2">
@@ -168,7 +273,7 @@ export default function LeaveApplicationPage() {
           <button
             type="submit"
             disabled={saving}
-            className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-medium disabled:opacity-60"
+            className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-medium disabled:opacity-60 shadow-md shadow-emerald-500/20"
           >
             {saving ? 'Submitting...' : 'Submit Application'}
           </button>

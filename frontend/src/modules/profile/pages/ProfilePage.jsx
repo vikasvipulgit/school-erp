@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { User, Lock, BookOpen, CheckCircle2, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/core/context/AuthContext';
 import { authService } from '@/core/services/authService';
-import teachersData from '@/data/teachers.json';
+import { useTeachers } from '@/core/hooks/useTeachers';
 
 function Field({ label, value, readOnly }) {
   return (
@@ -43,8 +43,9 @@ function PasswordInput({ label, value, onChange, placeholder }) {
 
 export default function ProfilePage() {
   const { userProfile, teacherId } = useAuth();
+  const { teachers } = useTeachers();
 
-  const teacher = teachersData.find(
+  const teacher = teachers.find(
     t => t.id === teacherId || t.email === userProfile?.email
   );
 

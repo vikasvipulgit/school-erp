@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { randomUUID } from 'crypto';
 import { SubjectEntity } from '../database/entities/subject.entity';
 import { CreateSubjectDto, UpdateSubjectDto } from './dto/subjects.dto';
 
@@ -22,7 +23,9 @@ export class SubjectsService {
   }
 
   async create(dto: CreateSubjectDto) {
-    const entity = this.repo.create({ ...dto, schoolId: dto.schoolId || 'school_001' });
+    const id = dto.id || `SUB${randomUUID().replace(/-/g, '').slice(0, 17)}`;
+    const code = dto.code || dto.name.slice(0, 4).toUpperCase();
+    const entity = this.repo.create({ ...dto, id, code, schoolId: dto.schoolId || 'school_001' });
     return this.repo.save(entity);
   }
 
@@ -34,6 +37,13 @@ export class SubjectsService {
 
   async remove(id: string) {
     await this.findOne(id);
-    await this.repo.delete(id);
+    try {
+      await this.repo.delete(id);
+    } catch (error) {
+      if (error.code === '23503' || (error.message && error.message.includes('violates foreign key constraint'))) {
+        throw new ConflictException('Cannot delete this subject because it is currently assigned to one or more teachers. Please reassign the teachers first.');
+      }
+      throw error;
+    }
   }
 }

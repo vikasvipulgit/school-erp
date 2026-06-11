@@ -7,3 +7,15 @@ import { apiRequest, API_ENDPOINTS } from '@/core/api';
 export function fetchReportsList() {
   return apiRequest(API_ENDPOINTS.reports.list);
 }
+
+export function fetchSubstitutionReport(date) {
+  return apiRequest(API_ENDPOINTS.reports.substitution(date));
+}
+
+export function fetchPendingTasksReport() {
+  return apiRequest(API_ENDPOINTS.reports.pendingTasks);
+}
+
+export function fetchOverdueTasksReport() {
+  return apiRequest(API_ENDPOINTS.reports.overdueTasks);
+}

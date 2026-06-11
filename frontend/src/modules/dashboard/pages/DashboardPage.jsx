@@ -2,14 +2,14 @@ import React, { useEffect, useState, useMemo } from 'react';
 import {
   Users, BookOpen, ClipboardList, CalendarOff, AlertCircle,
   CheckCircle2, Clock, BookMarked, UserCheck, BarChart3,
-  RefreshCw, ShieldCheck, CalendarDays,
+  RefreshCw, ShieldCheck, CalendarDays, GraduationCap,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/core/context/AuthContext';
-import { getAllAssignmentsWithTasks, getAssignmentsForTeacher } from '@/modules/tasks/services/tasksFirebaseService';
-import { getLeaveApplications, getLeaveApplicationsForTeacher, getProxyAssignments, approveLeave, approveProxy } from '@/modules/leave/services/leaveFirebaseService';
-import teachersData from '@/data/teachers.json';
-import classesData from '@/data/classes.json';
+import { getAllAssignmentsWithTasks, getAssignmentsForTeacher } from '@/modules/tasks/services/tasksService';
+import { getLeaveApplications, getLeaveApplicationsForTeacher, getProxyAssignments, approveLeave, approveProxy } from '@/modules/leave/services/leaveService';
+import { useTeachers } from '@/core/hooks/useTeachers';
+import { useClasses } from '@/core/context/ClassesContext';
 import { days, periods } from '@/modules/timetable/pages/TimetablePage';
 
 // ─── Shared atoms ──────────────────────────────────────────────────────────────
@@ -77,14 +77,16 @@ function Spinner() {
   );
 }
 
-function TeacherName({ id, name }) {
-  return teachersData.find(t => t.id === id)?.name || name || id || '—';
+function TeacherName({ id, name, teachers = [] }) {
+  return teachers.find(t => t.id === id)?.name || name || id || '—';
 }
 
 // ─── Admin Dashboard ───────────────────────────────────────────────────────────
 
 function AdminDashboard() {
   const navigate = useNavigate();
+  const { teachers } = useTeachers();
+  const { classes } = useClasses();
   const [assignments, setAssignments] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -97,21 +99,24 @@ function AdminDashboard() {
     });
   }, []);
 
-  const totalClasses   = classesData.reduce((n, c) => n + c.sections.length, 0);
+  const totalClasses   = classes.reduce((n, c) => n + c.sections.length, 0);
   const activeTasks    = assignments.filter(a => !['cancelled', 'completed'].includes(a.status)).length;
   const overdueTasks   = assignments.filter(a => a.status === 'overdue').length;
   const completedTasks = assignments.filter(a => a.status === 'completed').length;
-  const pendingLeaves  = leaves.filter(l => l.status === 'pending').length;
+  const pendingLeaves  = leaves.filter(l => l.status === 'pending');
+  const pendingTeacherLeaves  = pendingLeaves.filter(l => l.leaveOwnerType !== 'student').length;
+  const pendingStudentLeaves  = pendingLeaves.filter(l => l.leaveOwnerType === 'student').length;
 
   if (loading) return <Spinner />;
 
   return (
     <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={Users}        label="Teachers"        value={teachersData.length} color="bg-blue-500"    sub="Active staff" />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <StatCard icon={Users}        label="Teachers"        value={teachers.length} color="bg-blue-500"    sub="Active staff" />
         <StatCard icon={BookOpen}     label="Classes"         value={totalClasses}         color="bg-indigo-500"  sub="All sections" />
         <StatCard icon={ClipboardList} label="Active Tasks"  value={activeTasks}           color="bg-emerald-500" sub={`${overdueTasks} overdue`} alert={overdueTasks > 0} onClick={() => navigate('/tasks')} />
-        <StatCard icon={CalendarOff}  label="Pending Leaves"  value={pendingLeaves}        color="bg-orange-500"  sub="Awaiting approval" onClick={() => navigate('/leave')} />
+        <StatCard icon={CalendarOff}  label="Pending Teacher Leaves"  value={pendingTeacherLeaves}        color="bg-orange-500"  sub="Awaiting approval" onClick={() => navigate('/leave')} />
+        <StatCard icon={CalendarOff}  label="Pending Student Leaves"  value={pendingStudentLeaves}        color="bg-purple-500"  sub="Awaiting approval" onClick={() => navigate('/leave')} />
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
@@ -137,7 +142,7 @@ function AdminDashboard() {
               <div key={a.id} className="px-5 py-3 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-medium text-gray-900 truncate max-w-[180px]">{a.task?.title || '—'}</div>
-                  <div className="text-xs text-gray-400"><TeacherName id={a.teacherId} /></div>
+                  <div className="text-xs text-gray-400"><TeacherName id={a.teacherId} teachers={teachers} /></div>
                 </div>
                 <StatusBadge status={a.status} />
               </div>
@@ -147,15 +152,23 @@ function AdminDashboard() {
 
         <SectionCard title="Leave Applications" linkTo="/leave" linkLabel="View all" navigate={navigate}>
           {leaves.length === 0 ? <Empty text="No leave applications" /> :
-            leaves.slice(0, 6).map(l => (
-              <div key={l.id} className="px-5 py-3 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-gray-900"><TeacherName id={l.teacherId} name={l.teacherName} /></div>
-                  <div className="text-xs text-gray-400 capitalize">{l.leaveType} · {l.startDate} – {l.endDate}</div>
+            leaves.slice(0, 6).map(l => {
+              const isStudent = l.leaveOwnerType === 'student';
+              return (
+                <div key={l.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                      {isStudent ? (l.studentName || l.student?.name || 'Student') : <TeacherName id={l.teacherId} name={l.teacherName} teachers={teachers} />}
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${isStudent ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}`}>
+                        {isStudent ? 'Student Leave' : 'Teacher Leave'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-400 capitalize">{l.leaveType} · {l.startDate} – {l.endDate}</div>
+                  </div>
+                  <StatusBadge status={l.status} />
                 </div>
-                <StatusBadge status={l.status} />
-              </div>
-            ))
+              );
+            })
           }
         </SectionCard>
       </div>
@@ -167,6 +180,7 @@ function AdminDashboard() {
 
 function CoordinatorDashboard() {
   const navigate = useNavigate();
+  const { teachers } = useTeachers();
   const [leaves, setLeaves] = useState([]);
   const [proxies, setProxies] = useState([]);
   const [assignments, setAssignments] = useState([]);
@@ -182,7 +196,9 @@ function CoordinatorDashboard() {
   }, []);
 
   const pendingLeaves      = leaves.filter(l => l.status === 'pending');
-  const approvedNoProxy    = leaves.filter(l => l.status === 'approved' && !proxies.some(p => p.leaveApplicationId === l.id));
+  const pendingTeacherLeaves = pendingLeaves.filter(l => l.leaveOwnerType !== 'student');
+  const pendingStudentLeaves = pendingLeaves.filter(l => l.leaveOwnerType === 'student');
+  const approvedNoProxy    = leaves.filter(l => l.status === 'approved' && l.leaveOwnerType !== 'student' && !proxies.some(p => p.leaveApplicationId === l.id));
   const pendingProxies     = proxies.filter(p => p.status === 'pending');
   const overdueTasks       = assignments.filter(a => a.status === 'overdue').length;
 
@@ -190,8 +206,9 @@ function CoordinatorDashboard() {
 
   return (
     <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={CalendarOff}  label="Pending Leaves"       value={pendingLeaves.length}   color="bg-orange-500"  sub="Awaiting approval"    onClick={() => navigate('/leave')} />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <StatCard icon={CalendarOff}  label="Pending Teacher Leaves" value={pendingTeacherLeaves.length}  color="bg-orange-500"  sub="Awaiting approval"    onClick={() => navigate('/leave')} />
+        <StatCard icon={CalendarOff}  label="Pending Student Leaves" value={pendingStudentLeaves.length}  color="bg-purple-500"  sub="Awaiting approval"    onClick={() => navigate('/leave')} />
         <StatCard icon={UserCheck}    label="Needs Proxy"          value={approvedNoProxy.length} color="bg-red-500"     sub="Approved, no cover"  alert={approvedNoProxy.length > 0} onClick={() => navigate('/leave')} />
         <StatCard icon={RefreshCw}    label="Pending Proxies"      value={pendingProxies.length}  color="bg-indigo-500"  sub="Awaiting principal"   onClick={() => navigate('/leave')} />
         <StatCard icon={AlertCircle}  label="Overdue Tasks"        value={overdueTasks}           color="bg-emerald-500" sub="Need attention"       alert={overdueTasks > 0} onClick={() => navigate('/tasks')} />
@@ -205,7 +222,7 @@ function CoordinatorDashboard() {
             : approvedNoProxy.slice(0, 6).map(l => (
               <div key={l.id} className="px-5 py-3 flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-medium text-gray-900"><TeacherName id={l.teacherId} name={l.teacherName} /></div>
+                  <div className="text-sm font-medium text-gray-900"><TeacherName id={l.teacherId} name={l.teacherName} teachers={teachers} /></div>
                   <div className="text-xs text-gray-400">{l.startDate} – {l.endDate} · {l.leaveType}</div>
                 </div>
                 <button
@@ -223,15 +240,23 @@ function CoordinatorDashboard() {
         <SectionCard title="Pending Leave Requests" linkTo="/leave" linkLabel="View all" navigate={navigate}>
           {pendingLeaves.length === 0
             ? <Empty text="No pending leave requests" />
-            : pendingLeaves.slice(0, 6).map(l => (
-              <div key={l.id} className="px-5 py-3 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-gray-900"><TeacherName id={l.teacherId} name={l.teacherName} /></div>
-                  <div className="text-xs text-gray-400 capitalize">{l.leaveType} · {l.startDate} – {l.endDate}</div>
-                </div>
-                <StatusBadge status={l.status} />
-              </div>
-            ))
+            : pendingLeaves.slice(0, 6).map(l => {
+                const isStudent = l.leaveOwnerType === 'student';
+                return (
+                  <div key={l.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                        {isStudent ? (l.studentName || l.student?.name || 'Student') : <TeacherName id={l.teacherId} name={l.teacherName} teachers={teachers} />}
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${isStudent ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}`}>
+                          {isStudent ? 'Student Leave' : 'Teacher Leave'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400 capitalize">{l.leaveType} · {l.startDate} – {l.endDate}</div>
+                    </div>
+                    <StatusBadge status={l.status} />
+                  </div>
+                );
+              })
           }
         </SectionCard>
       </div>
@@ -262,6 +287,7 @@ function CoordinatorDashboard() {
 function PrincipalDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { teachers } = useTeachers();
   const [leaves, setLeaves] = useState([]);
   const [proxies, setProxies] = useState([]);
   const [assignments, setAssignments] = useState([]);
@@ -280,6 +306,8 @@ function PrincipalDashboard() {
   useEffect(() => { load(); }, []);
 
   const pendingLeaves   = leaves.filter(l => l.status === 'pending');
+  const pendingTeacherLeaves = pendingLeaves.filter(l => l.leaveOwnerType !== 'student');
+  const pendingStudentLeaves = pendingLeaves.filter(l => l.leaveOwnerType === 'student');
   const pendingProxies  = proxies.filter(p => p.status === 'pending');
   const overdueTasks    = assignments.filter(a => a.status === 'overdue').length;
   const completedTasks  = assignments.filter(a => a.status === 'completed').length;
@@ -302,8 +330,9 @@ function PrincipalDashboard() {
 
   return (
     <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard icon={CalendarOff}  label="Pending Leaves"   value={pendingLeaves.length}   color="bg-orange-500" sub="Require approval"   alert={pendingLeaves.length > 0}  onClick={() => navigate('/leave')} />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <StatCard icon={CalendarOff}  label="Pending Teacher Leaves" value={pendingTeacherLeaves.length}  color="bg-orange-500" sub="Require approval"   alert={pendingTeacherLeaves.length > 0}  onClick={() => navigate('/leave')} />
+        <StatCard icon={CalendarOff}  label="Pending Student Leaves" value={pendingStudentLeaves.length}  color="bg-purple-500" sub="Require approval"   alert={pendingStudentLeaves.length > 0}  onClick={() => navigate('/leave')} />
         <StatCard icon={ShieldCheck}  label="Pending Proxies"  value={pendingProxies.length}  color="bg-indigo-500" sub="Require approval"   alert={pendingProxies.length > 0} onClick={() => navigate('/leave')} />
         <StatCard icon={AlertCircle}  label="Overdue Tasks"    value={overdueTasks}           color="bg-red-500"    sub="Needs attention"    alert={overdueTasks > 0}          onClick={() => navigate('/tasks')} />
         <StatCard icon={CheckCircle2} label="Completed Tasks"  value={completedTasks}         color="bg-green-500"  sub="This period" />
@@ -314,29 +343,37 @@ function PrincipalDashboard() {
         <SectionCard title="Leave Awaiting Approval" linkTo="/leave" linkLabel="View all" navigate={navigate}>
           {pendingLeaves.length === 0
             ? <div className="px-5 py-8 text-center text-sm text-green-600 font-medium">No pending leave requests ✓</div>
-            : pendingLeaves.slice(0, 5).map(l => (
-              <div key={l.id} className="px-5 py-3 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-gray-900"><TeacherName id={l.teacherId} name={l.teacherName} /></div>
-                  <div className="text-xs text-gray-400 capitalize">{l.leaveType} · {l.startDate} – {l.endDate}</div>
-                </div>
-                <div className="flex gap-1.5">
-                  <button
-                    disabled={actionId === l.id}
-                    onClick={() => handleApproveLeave(l.id)}
-                    className="text-xs bg-green-50 text-green-700 border border-green-200 px-2.5 py-1 rounded-lg hover:bg-green-100 disabled:opacity-50"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => navigate('/leave')}
-                    className="text-xs bg-gray-50 text-gray-600 border border-gray-200 px-2.5 py-1 rounded-lg hover:bg-gray-100"
-                  >
-                    Review
-                  </button>
-                </div>
-              </div>
-            ))
+            : pendingLeaves.slice(0, 5).map(l => {
+                const isStudent = l.leaveOwnerType === 'student';
+                return (
+                  <div key={l.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                        {isStudent ? (l.studentName || l.student?.name || 'Student') : <TeacherName id={l.teacherId} name={l.teacherName} teachers={teachers} />}
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${isStudent ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}`}>
+                          {isStudent ? 'Student Leave' : 'Teacher Leave'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400 capitalize">{l.leaveType} · {l.startDate} – {l.endDate}</div>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        disabled={actionId === l.id}
+                        onClick={() => handleApproveLeave(l.id)}
+                        className="text-xs bg-green-50 text-green-700 border border-green-200 px-2.5 py-1 rounded-lg hover:bg-green-100 disabled:opacity-50"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => navigate('/leave')}
+                        className="text-xs bg-gray-50 text-gray-600 border border-gray-200 px-2.5 py-1 rounded-lg hover:bg-gray-100"
+                      >
+                        Review
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
           }
         </SectionCard>
 
@@ -345,8 +382,8 @@ function PrincipalDashboard() {
           {pendingProxies.length === 0
             ? <div className="px-5 py-8 text-center text-sm text-green-600 font-medium">No pending proxy approvals ✓</div>
             : pendingProxies.slice(0, 5).map(p => {
-              const orig = teachersData.find(t => t.id === p.originalTeacherId);
-              const proxy = teachersData.find(t => t.id === p.proxyTeacherId);
+              const orig = teachers.find(t => t.id === p.originalTeacherId);
+              const proxy = teachers.find(t => t.id === p.proxyTeacherId);
               return (
                 <div key={p.id} className="px-5 py-3 flex items-center justify-between gap-3">
                   <div>
@@ -395,13 +432,14 @@ function PrincipalDashboard() {
 function TeacherDashboard() {
   const navigate = useNavigate();
   const { teacherId, userProfile } = useAuth();
+  const { teachers } = useTeachers();
   const [assignments, setAssignments] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const teacher = useMemo(
-    () => teachersData.find(t => t.id === teacherId || t.email === userProfile?.email),
-    [teacherId, userProfile?.email]
+    () => teachers.find(t => t.id === teacherId || t.email === userProfile?.email),
+    [teachers, teacherId, userProfile?.email]
   );
 
   useEffect(() => {
@@ -455,6 +493,21 @@ function TeacherDashboard() {
         <StatCard icon={CheckCircle2} label="Completed Tasks" value={completedTasks}         color="bg-green-500" />
         <StatCard icon={CalendarOff}  label="My Leaves"       value={leaves.length}          color="bg-orange-500" sub={`${pendingLeaves} pending`} onClick={() => navigate('/leave')} />
       </div>
+
+      {/* Class Teacher Banner — only shown if assigned */}
+      {teacher?.isClassTeacher && teacher?.classTeacherClassId && (
+        <div className="mb-6 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-5 py-3.5">
+          <div className="w-9 h-9 rounded-lg bg-blue-500 flex items-center justify-center shrink-0">
+            <GraduationCap size={18} className="text-white" />
+          </div>
+          <div>
+            <div className="text-xs text-blue-500 font-medium uppercase tracking-wide">Homeroom Assignment</div>
+            <div className="text-sm font-semibold text-blue-900">
+              Class Teacher of <span className="text-blue-600">{teacher.classTeacherClassId}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-6">
         <SectionCard title="My Timetable" linkTo="/timetable" linkLabel="Full view" navigate={navigate}>

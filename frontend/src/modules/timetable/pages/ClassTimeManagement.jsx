@@ -33,7 +33,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useClasses } from "@/core/context/ClassesContext";
-import { loadTimetableSettings, saveTimetableSettings } from "@/modules/timetable/services/timetableFirebaseService";
+import { loadTimetableSettings, saveTimetableSettings } from "@/modules/timetable/services/timetableService";
 
 // ─── Period Slot Management ────────────────────────────────────────────────
 

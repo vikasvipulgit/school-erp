@@ -1,10 +1,10 @@
 import {
   Controller, Get, Post, Patch,
-  Param, Body, UseGuards,
+  Param, Body, UseGuards, BadRequestException, ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { LeaveService } from './leave.service';
-import { SubmitLeaveDto, ReviewLeaveDto, CreateProxyDto } from './dto/leave.dto';
+import { SubmitLeaveDto, ReviewLeaveDto, CreateProxyDto, AssignProxyBatchDto } from './dto/leave.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -26,10 +26,10 @@ export class LeaveController {
   listProxies() { return this.svc.findAllProxies(); }
 
   @Post('proxy')
-  @UseGuards(RolesGuard) @MinRole(Role.COORDINATOR)
-  @ApiOperation({ summary: 'Create proxy assignment (coordinator+)' })
-  createProxy(@Body() dto: CreateProxyDto, @CurrentUser() user: any) {
-    return this.svc.createProxy(dto, user);
+  @UseGuards(RolesGuard) @Roles(Role.ADMIN, Role.COORDINATOR, Role.PRINCIPAL)
+  @ApiOperation({ summary: 'Assign proxy teachers in batch' })
+  assignProxy(@Body() dto: AssignProxyBatchDto, @CurrentUser() user: any) {
+    return this.svc.assignProxyBatch(dto, user);
   }
 
   @Patch('proxy/:id/approve')
@@ -52,27 +52,46 @@ export class LeaveController {
   @ApiOperation({ summary: 'List leave applications (coordinator+: all; teacher: own)' })
   findAll(@CurrentUser() user: any) { return this.svc.findAll(user); }
 
+  @Get('my')
+  @ApiOperation({ summary: 'List my leave applications' })
+  getMyLeaves(@CurrentUser() user: any) {
+    return this.svc.findAll(user);
+  }
+
+  @Get('stats')
+  @ApiOperation({ summary: 'Get my leave balance stats' })
+  getStats(@CurrentUser() user: any) {
+    return this.svc.getMyLeaveStats(user);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get leave application by id' })
   findOne(@Param('id') id: string) { return this.svc.findOne(id); }
 
   @Post()
-  @UseGuards(RolesGuard) @MinRole(Role.TEACHER)
-  @ApiOperation({ summary: 'Submit leave application (teacher+)' })
+  @UseGuards(RolesGuard) @Roles(Role.TEACHER, Role.STUDENT)
+  @ApiOperation({ summary: 'Submit leave application (teacher or student)' })
   submit(@Body() dto: SubmitLeaveDto, @CurrentUser() user: any) {
+    if (user.role !== Role.TEACHER && user.role !== Role.STUDENT) {
+      throw new ForbiddenException('Only teachers and students can apply for leave');
+    }
     return this.svc.submit(dto, user);
   }
 
   @Patch(':id/approve')
-  @UseGuards(RolesGuard) @MinRole(Role.COORDINATOR)
-  @ApiOperation({ summary: 'Approve leave (coordinator+)' })
-  approve(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.svc.approve(id, user);
+  @UseGuards(RolesGuard) @Roles(Role.ADMIN, Role.PRINCIPAL)
+  @ApiOperation({ summary: 'Approve leave (admin/principal only)' })
+  approve(
+    @Param('id') id: string,
+    @Body() dto: ReviewLeaveDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.svc.approve(id, dto, user);
   }
 
   @Patch(':id/reject')
-  @UseGuards(RolesGuard) @MinRole(Role.COORDINATOR)
-  @ApiOperation({ summary: 'Reject leave (coordinator+)' })
+  @UseGuards(RolesGuard) @Roles(Role.ADMIN, Role.PRINCIPAL)
+  @ApiOperation({ summary: 'Reject leave (admin/principal only)' })
   reject(
     @Param('id') id: string,
     @Body() dto: ReviewLeaveDto,

@@ -14,10 +14,22 @@ import { TimetableModule } from './timetable/timetable.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { FeesModule } from './fees/fees.module';
 import { ReportsModule } from './reports/reports.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { AcademicYearsModule } from './academic-years/academic-years.module';
+import { FeedbackModule } from './feedback/feedback.module';
+import { FirebaseModule } from './firebase/firebase.module';
+import { EmailModule } from './email/email.module';
+import { CircularsModule } from './circulars/circular.module';
+import { MailboxModule } from './mailbox/mailbox.module';
+import { AchievementsModule } from './achievements/achievements.module';
+import { StudentsModule } from './students/students.module';
+import { MessagesModule } from './messages/messages.module';
+import { AppController } from './app.controller';
+import { validate } from './config/env.validation';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate }),
     DatabaseModule,
     AuthModule,
     UsersModule,
@@ -32,6 +44,17 @@ import { ReportsModule } from './reports/reports.module';
     AttendanceModule,
     FeesModule,
     ReportsModule,
+    NotificationsModule,
+    AcademicYearsModule,
+    FeedbackModule,
+    FirebaseModule,
+    EmailModule,
+    CircularsModule,
+    MailboxModule,
+    AchievementsModule,
+    StudentsModule,
+    MessagesModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}

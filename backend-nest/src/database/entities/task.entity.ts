@@ -18,6 +18,9 @@ export class TaskEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ name: 'academic_year_id', nullable: true })
+  academicYearId: number;
+
   @Column({ length: 255 })
   title: string;
 
@@ -47,6 +50,9 @@ export class TaskEntity {
 
   @Column('text', { array: true, name: 'assigned_to', default: [] })
   assignedTo: string[];
+
+  @Column({ name: 'file_url', type: 'text', nullable: true })
+  fileUrl: string;
 
   @Column({ name: 'school_id', default: 'school_001', length: 50 })
   schoolId: string;

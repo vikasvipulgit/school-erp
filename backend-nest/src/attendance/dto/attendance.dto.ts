@@ -1,21 +1,49 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { IsString, IsNotEmpty, IsArray, ValidateNested, IsOptional, IsDateString, IsEnum } from 'class-validator';
+import { Type } from 'class-transformer';
+import { AttendanceStatus } from '../enums/attendance-status.enum';
+
+class StudentAttendanceDto {
+  @IsString()
+  @IsNotEmpty()
+  studentId: string;
+
+  @IsEnum(AttendanceStatus)
+  status: AttendanceStatus;
+
+  @IsString()
+  @IsOptional()
+  remarks?: string;
+}
 
 export class MarkAttendanceDto {
-  @ApiProperty() @IsString() date: string;
-  @ApiProperty() @IsString() classId: string;
-  @ApiProperty() @IsString() section: string;
-  @ApiProperty() @IsString() subjectId: string;
-  @ApiProperty() @IsString() teacherId: string;
-  @ApiProperty({ required: false }) @IsString() @IsOptional() periodId?: string;
-  @ApiProperty({ description: 'Array of { studentId, status }' })
+  @IsString()
+  @IsNotEmpty()
+  classId: string;
+
+  @IsDateString()
+  @IsNotEmpty()
+  date: string;
+
+  @IsString()
+  @IsOptional()
+  section?: string;
+
+  @IsString()
+  @IsOptional()
+  subjectId?: string;
+
   @IsArray()
-  records: Record<string, any>[];
+  @ValidateNested({ each: true })
+  @Type(() => StudentAttendanceDto)
+  attendance: StudentAttendanceDto[];
 }
 
 export class UpdateAttendanceDto {
-  @ApiProperty({ required: false })
-  @IsArray()
+  @IsEnum(AttendanceStatus)
   @IsOptional()
-  records?: Record<string, any>[];
+  status?: AttendanceStatus;
+
+  @IsString()
+  @IsOptional()
+  remarks?: string;
 }

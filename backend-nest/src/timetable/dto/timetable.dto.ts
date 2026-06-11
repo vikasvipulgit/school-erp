@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsObject, IsOptional } from 'class-validator';
+import { IsArray, IsDateString, IsObject, IsOptional } from 'class-validator';
 
 export class SaveTimetableDto {
   @ApiProperty({ description: 'Grid data keyed by class-section' })
@@ -9,6 +9,16 @@ export class SaveTimetableDto {
   @ApiProperty({ required: false })
   @IsOptional()
   schoolId?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsDateString()
+  effectiveFrom?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsDateString()
+  effectiveTo?: string;
 }
 
 export class SaveTimetableSettingsDto {

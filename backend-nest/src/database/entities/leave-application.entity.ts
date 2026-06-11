@@ -17,8 +17,34 @@ export class LeaveApplicationEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'teacher_id', length: 20 })
+  @Column({ name: 'academic_year_id', nullable: true })
+  academicYearId: number;
+
+  @Column({
+    type: 'varchar',
+    name: 'leave_duration',
+    default: 'FULL_DAY',
+    length: 20
+  })
+  leaveDuration: string;
+
+  @Column({
+    type: 'decimal',
+    name: 'deducted_leaves',
+    precision: 4,
+    scale: 1,
+    default: 1
+  })
+  deductedLeaves: number;
+
+  @Column({ name: 'teacher_id', length: 50, nullable: true })
   teacherId: string;
+
+  @Column({ name: 'student_id', length: 10, nullable: true })
+  studentId: string;
+
+  @Column({ name: 'leave_owner_type', length: 10, default: 'teacher' })
+  leaveOwnerType: string;
 
   @Column({ name: 'leave_type', length: 20, default: 'other' })
   leaveType: string;
@@ -49,6 +75,9 @@ export class LeaveApplicationEntity {
 
   @Column({ name: 'school_id', default: 'school_001', length: 50 })
   schoolId: string;
+
+  @Column({ name: 'proxy_assigned', default: false })
+  proxyAssigned: boolean;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

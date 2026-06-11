@@ -11,8 +11,12 @@ export class UsersService {
     private repo: Repository<UserEntity>,
   ) {}
 
-  async findAll() {
-    const users = await this.repo.find({ order: { createdAt: 'DESC' } });
+  async findAll(role?: string) {
+    const where = role ? { role: role as any } : {};
+    const users = await this.repo.find({ 
+      where,
+      order: { createdAt: 'DESC' } 
+    });
     return users.map(this.sanitize);
   }
 
@@ -31,6 +35,11 @@ export class UsersService {
   async remove(id: string) {
     await this.findOne(id);
     await this.repo.delete(id);
+  }
+
+  async saveFcmToken(userId: string, fcmToken: string) {
+    await this.repo.update(userId, { fcmToken });
+    return { success: true };
   }
 
   private sanitize(user: UserEntity) {

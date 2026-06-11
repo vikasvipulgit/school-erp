@@ -3,9 +3,15 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { authService } from '@/core/services/authService';
 import { useAuth } from '@/core/context/AuthContext';
+import logo from '@/assets/logo.png';
+
+
+import { requestNotificationPermission } from '@/utils/firebaseNotifications';
 
 export default function LoginPage() {
+  const [loginMode, setLoginMode] = useState('staff'); // 'staff' | 'student'
   const [email, setEmail] = useState('');
+  const [studentId, setStudentId] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -18,8 +24,17 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const user = await authService.login(email.trim(), password);
+      let user;
+      if (loginMode === 'staff') {
+        user = await authService.login(email.trim(), password);
+      } else {
+        user = await authService.studentLogin(studentId.trim(), password);
+      }
       login(user);
+      
+      // Request FCM permission (non-blocking)
+      requestNotificationPermission().catch(console.error);
+      
       navigate('/', { replace: true });
     } catch (err) {
       setError(err.message || 'Invalid email or password.');
@@ -31,14 +46,36 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="bg-white p-8 rounded-xl border border-gray-200 w-full max-w-sm shadow-sm">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">School ERP</h1>
+        <div className="mb-6 flex flex-col items-center text-center">
+          <img src={logo} alt="Logo" className="w-16 h-16 object-contain mb-4" />
+          <h1 className="text-2xl font-bold text-gray-900 leading-tight">Welcome to <br /> Javiya Schooling System</h1>
           <p className="text-sm text-gray-500 mt-1">
             Sign in to your account.{' '}
             <Link to="/signup" className="text-emerald-600 hover:underline font-medium">
               Create account
             </Link>
           </p>
+        </div>
+
+        <div className="flex bg-gray-100 rounded-lg p-1 mb-6">
+          <button
+            type="button"
+            className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
+              loginMode === 'staff' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+            }`}
+            onClick={() => { setLoginMode('staff'); setError(''); }}
+          >
+            Staff Login
+          </button>
+          <button
+            type="button"
+            className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
+              loginMode === 'student' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+            }`}
+            onClick={() => { setLoginMode('student'); setError(''); }}
+          >
+            Student Login
+          </button>
         </div>
 
         <form onSubmit={handleLogin} noValidate>
@@ -48,20 +85,37 @@ export default function LoginPage() {
             </div>
           )}
 
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-              placeholder="you@school.com"
-              className="w-full bg-gray-100 rounded-lg px-4 py-2.5 text-sm border-0 outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-          </div>
+          {loginMode === 'staff' ? (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                placeholder="you@school.com"
+                className="w-full bg-gray-100 rounded-lg px-4 py-2.5 text-sm border-0 outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+          ) : (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Student ID
+              </label>
+              <input
+                type="text"
+                value={studentId}
+                onChange={(e) => setStudentId(e.target.value.toUpperCase())}
+                required
+                maxLength={5}
+                placeholder="ST101"
+                className="w-full bg-gray-100 rounded-lg px-4 py-2.5 text-sm border-0 outline-none focus:ring-2 focus:ring-emerald-500 uppercase"
+              />
+            </div>
+          )}
 
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -90,7 +144,7 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            disabled={loading || !email || !password}
+            disabled={loading || (!email && loginMode === 'staff') || (!studentId && loginMode === 'student') || !password}
             className="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg py-2.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? 'Signing in…' : 'Sign In'}

@@ -8,6 +8,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { UserEntity } from '../database/entities/user.entity';
+import { StudentEntity } from '../database/entities/student.entity';
 
 @Module({
   imports: [
@@ -15,10 +16,10 @@ import { UserEntity } from '../database/entities/user.entity';
     // JwtModule configured without a global secret — each signAsync call
     // passes its own secret so access and refresh tokens use different keys.
     JwtModule.register({}),
-    TypeOrmModule.forFeature([UserEntity]),
+    TypeOrmModule.forFeature([UserEntity, StudentEntity]),
   ],
   providers: [AuthService, JwtStrategy, JwtAuthGuard, RolesGuard],
   controllers: [AuthController],
   exports: [AuthService, JwtAuthGuard, RolesGuard, JwtModule],
 })
-export class AuthModule {}
+export class AuthModule { }

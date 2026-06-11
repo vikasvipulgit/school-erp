@@ -48,6 +48,15 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
+  @Post('student-login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Student login and receive access + refresh tokens' })
+  @ApiResponse({ status: 200, description: 'Tokens issued' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  studentLogin(@Body('studentId') studentId: string, @Body('password') password: string) {
+    return this.authService.validateStudent(studentId, password);
+  }
+
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Exchange refresh token for new access token' })

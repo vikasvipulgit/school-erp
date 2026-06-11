@@ -5,7 +5,7 @@ import { authService } from '@/core/services/authService';
 import { useAuth } from '@/core/context/AuthContext';
 
 // ─── Validation rules ─────────────────────────────────────────────────────────
-const ROLES = ['student', 'parent', 'teacher', 'admin'];
+const ROLES = ['student', 'parent', 'teacher', 'coordinator', 'principal', 'admin'];
 
 function validateName(v) {
   if (!v.trim()) return 'Full name is required.';

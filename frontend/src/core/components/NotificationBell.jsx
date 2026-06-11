@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Bell, CheckCheck, CalendarOff, ClipboardList, UserCheck } from "lucide-react";
+import { Bell, CheckCheck, CalendarOff, ClipboardList, UserCheck, MessageSquare, CheckCircle2, XCircle } from "lucide-react";
 import { useAuth } from "@/core/context/AuthContext";
-import { getLeaveApplications, getProxyAssignments } from "@/modules/leave/services/leaveFirebaseService";
-import { getAllAssignmentsWithTasks } from "@/modules/tasks/services/tasksFirebaseService";
+import { getLeaveApplications, getProxyAssignments } from "@/modules/leave/services/leaveService";
+import { getAllAssignmentsWithTasks, getAssignmentsForTeacher } from "@/modules/tasks/services/tasksService";
 import { useNavigate } from "react-router-dom";
+import { notificationService } from "@/core/services/notificationService";
+import { messaging, onMessage } from "@/firebase/firebase";
+import { showNotificationToast } from "@/utils/firebaseNotifications";
 
 function useNotifications() {
   const { role, teacherId, canApproveLeave, canApproveProxy, canAssignProxy } = useAuth();
+  const navigate = useNavigate();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -14,9 +18,41 @@ function useNotifications() {
     if (!role) return;
     const next = [];
     try {
+      // 1. Fetch real notifications from DB
+      const dbNotifications = await notificationService.getNotifications();
+      console.log('[DEBUG Frontend] dbNotifications:', dbNotifications);
+      (dbNotifications || []).forEach((n) => {
+        let icon = MessageSquare;
+        let color = n.isRead ? "text-gray-400" : "text-emerald-500";
+        
+        if (n.title === "Leave Approved") {
+          icon = CheckCircle2;
+          color = n.isRead ? "text-gray-400" : "text-emerald-500";
+        } else if (n.title === "Leave Rejected") {
+          icon = XCircle;
+          color = n.isRead ? "text-gray-400" : "text-red-500";
+        } else if (n.type === "feedback") {
+          icon = MessageSquare;
+          color = n.isRead ? "text-gray-400" : "text-blue-500";
+        }
+
+        next.push({
+          id: n.id,
+          dbId: n.id,
+          icon: icon,
+          color: color,
+          label: n.title,
+          message: n.message,
+          path: n.type === "task" ? "/tasks" : n.type === "feedback" ? "/feedback" : "/leave",
+          isRead: n.isRead,
+          createdAt: n.createdAt,
+          type: n.type,
+        });
+      });
+
+      // 2. Fetch system-generated alerts (Virtual)
       if (canApproveLeave || canAssignProxy || canApproveProxy) {
-        const leaves = await getLeaveApplications();
-        const proxies = await getProxyAssignments();
+        const [leaves, proxies] = await Promise.all([getLeaveApplications(), getProxyAssignments()]);
 
         if (canApproveLeave) {
           const pending = leaves.filter((l) => l.status === "pending");
@@ -33,9 +69,7 @@ function useNotifications() {
 
         if (canAssignProxy) {
           const assignedLeaveIds = new Set(proxies.map((p) => p.leaveApplicationId).filter(Boolean));
-          const needsProxy = leaves.filter(
-            (l) => l.status === "approved" && !assignedLeaveIds.has(l.id)
-          );
+          const needsProxy = leaves.filter((l) => l.status === "approved" && !assignedLeaveIds.has(l.id));
           if (needsProxy.length) {
             next.push({
               id: "proxy-needed",
@@ -61,12 +95,18 @@ function useNotifications() {
         }
       }
 
-      const assignments = await getAllAssignmentsWithTasks();
+      // 3. Add existing virtual task alerts
+      let assignments = [];
+      if (role === "teacher") {
+        assignments = await getAssignmentsForTeacher();
+      } else if (["admin", "principal", "coordinator"].includes(role)) {
+        assignments = await getAllAssignmentsWithTasks();
+      }
+
       const now = new Date();
       if (role === "teacher" && teacherId) {
         const myOverdue = assignments.filter(
           (a) =>
-            a.assignedTo === teacherId &&
             a.status !== "completed" &&
             a.dueDate &&
             new Date(a.dueDate) < now
@@ -80,7 +120,7 @@ function useNotifications() {
             path: "/tasks",
           });
         }
-      } else {
+      } else if (["admin", "principal", "coordinator"].includes(role)) {
         const overdue = assignments.filter(
           (a) =>
             a.status !== "completed" &&
@@ -97,25 +137,51 @@ function useNotifications() {
           });
         }
       }
-    } catch {
-      // silently ignore network errors
-    }
+    } catch (e) { console.error(e); }
+
+    // Sort by date (DB notifications have createdAt, virtual ones don't, so put virtual on top)
+    next.sort((a, b) => {
+      if (!a.createdAt) return -1;
+      if (!b.createdAt) return 1;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
     setItems(next);
     setLoading(false);
   }, [role, teacherId, canApproveLeave, canApproveProxy, canAssignProxy]);
 
   useEffect(() => {
     load();
-    const timer = setInterval(load, 60_000);
-    return () => clearInterval(timer);
+    const timer = setInterval(load, 30_000);
+
+    // Real-time foreground listener
+    const unsubscribe = onMessage(messaging, (payload) => {
+      console.log("[NotificationBell] Foreground notification received:", payload);
+      
+      // Show in-app toast
+      showNotificationToast(payload, navigate);
+
+      // Instantly refresh notification list
+      load();
+    });
+
+    return () => {
+      clearInterval(timer);
+      unsubscribe();
+    };
   }, [load]);
 
-  return { items, loading, refresh: load };
+  const markAsRead = async (id) => {
+    await notificationService.markAsRead(id);
+    load();
+  };
+
+  return { items, loading, refresh: load, markAsRead };
 }
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
-  const { items, loading } = useNotifications();
+  const { items, loading, markAsRead } = useNotifications();
   const ref = useRef(null);
   const navigate = useNavigate();
 
@@ -169,14 +235,46 @@ export default function NotificationBell() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       setOpen(false);
+                      if (item.dbId && !item.isRead) {
+                        await markAsRead(item.dbId);
+                      }
                       navigate(item.path);
                     }}
-                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+                    className={`w-full flex items-start gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left ${
+                      item.dbId && !item.isRead ? "bg-emerald-50/30" : ""
+                    }`}
                   >
                     <Icon size={16} className={`mt-0.5 shrink-0 ${item.color}`} />
-                    <span className="text-sm text-gray-700">{item.label}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700">{item.label}</span>
+                        {item.type === 'leave' && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-600 border border-indigo-100">
+                            Leave
+                          </span>
+                        )}
+                        {item.type === 'task' && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-100">
+                            Task
+                          </span>
+                        )}
+                        {item.type === 'feedback' && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-600 border border-emerald-100">
+                            Feedback
+                          </span>
+                        )}
+                      </div>
+                      {item.message && (
+                        <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">
+                          {item.message}
+                        </div>
+                      )}
+                    </div>
+                    {item.dbId && !item.isRead && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5" />
+                    )}
                   </button>
                 );
               })

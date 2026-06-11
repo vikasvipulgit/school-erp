@@ -14,9 +14,21 @@ import {
   ChevronRight,
   LogOut,
   UserCircle,
+  Settings,
+  MessageSquare,
+  Megaphone,
+  Mail,
+  ClipboardCheck,
+  Trophy,
+  FileText,
 } from "lucide-react";
 import { useAuth } from "@/core/context/AuthContext";
+import { useAcademicYear } from "@/core/context/AcademicYearContext";
 import NotificationBell from "@/core/components/NotificationBell";
+import { requestNotificationPermission } from "@/utils/firebaseNotifications";
+import logo from "@/assets/logo.png";
+import { messageService } from "@/modules/mailbox/services/messageService";
+
 
 // roles: allowlist — omit to show to everyone
 const navSections = [
@@ -45,8 +57,14 @@ const navSections = [
   {
     label: "OPERATIONS",
     items: [
-      { label: "Tasks", icon: ClipboardList, path: "/tasks" },
-      { label: "Leave", icon: CalendarOff,   path: "/leave" },
+      { label: "Tasks",      icon: ClipboardList,  path: "/tasks" },
+      { label: "Leave",      icon: CalendarOff,    path: "/leave" },
+      { label: "Circulars",  icon: Megaphone,      path: "/circulars", roles: ["admin", "principal"] },
+      { label: "Mailbox",    icon: Mail,           path: "/mailbox",   roles: ["admin", "principal"] },
+      { label: "Mailbox",    icon: Mail,           path: "/teacher/mailbox", roles: ["teacher"] },
+      { label: "Attendance", icon: ClipboardCheck, path: "/attendance/mark", roles: ["admin", "principal", "teacher"] },
+      { label: "Achievements", icon: Trophy,       path: "/achievements", roles: ["admin", "principal"] },
+      { label: "Feedback",   icon: MessageSquare,  path: "/feedback",  roles: ["principal", "teacher"] },
     ],
   },
   {
@@ -55,20 +73,50 @@ const navSections = [
       { label: "Reports", icon: BarChart3, path: "/reports", roles: ["admin", "principal", "coordinator"] },
     ],
   },
+  {
+    label: "SETTINGS",
+    items: [
+      { label: "Academic Years", icon: Settings, path: "/academic-years", roles: ["admin", "principal"] },
+    ],
+  },
 ];
 
 export default function AppLayout({ children }) {
   const { userProfile, isTeacher, role, logout } = useAuth();
+  const { activeYear, loading: yearLoading } = useAcademicYear();
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [unreadMailCount, setUnreadMailCount] = React.useState(0);
   const navigate = useNavigate();
 
-  const displayName = userProfile?.name || userProfile?.email || "User";
-  const initials = displayName
+  React.useEffect(() => {
+    // Poll for mailbox unread count
+    if (role === 'teacher' || role === 'student') {
+      const fetchCount = () => {
+        messageService.getUnreadCount().then((res) => {
+          setUnreadMailCount(res.unreadCount || 0);
+        }).catch(() => {});
+      };
+      fetchCount();
+      const interval = setInterval(fetchCount, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [role]);
+
+  React.useEffect(() => {
+    // Check and request permission for returning users
+    if (userProfile) {
+      requestNotificationPermission().catch(console.error);
+    }
+  }, [userProfile]);
+
+  const displayName = userProfile?.fullName || userProfile?.name || userProfile?.email || "User";
+  const initials = (displayName || "User")
     .split(" ")
+    .filter(Boolean)
     .map((part) => part[0])
     .join("")
     .slice(0, 2)
-    .toUpperCase();
+    .toUpperCase() || "U";
 
   const handleLogout = async () => {
     await logout();
@@ -85,19 +133,41 @@ export default function AppLayout({ children }) {
         {/* Logo */}
         <div className="px-5 py-5 border-b border-gray-100">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-              <GraduationCap size={16} className="text-white" />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden">
+              <img src={logo} alt="Logo" className="w-full h-full object-contain" />
             </div>
             <div>
-              <div className="font-bold text-gray-900 text-sm leading-tight">School ERP</div>
-              <div className="text-xs text-gray-400">Management System</div>
+              <div className="font-bold text-gray-900 text-[10px] leading-tight opacity-60">Welcome to</div>
+              <div className="font-extrabold text-gray-900 text-sm leading-tight">Javiya Schooling System</div>
             </div>
           </div>
         </div>
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-5">
-          {navSections.map((section) => {
+          {(role === 'student' ? [
+            {
+              label: "OVERVIEW",
+              items: [
+                { label: "Dashboard", icon: LayoutDashboard, path: "/" },
+              ],
+            },
+            {
+              label: "ACADEMICS",
+              items: [
+                { label: "Timetable", icon: CalendarDays, path: "/timetable" },
+                { label: "Assignments", icon: ClipboardList, path: "/tasks" },
+                { label: "Circulars", icon: Megaphone, path: "/student/circulars" },
+                { label: "Mailbox", icon: Mail, path: "/student/mailbox" },
+                { label: "Attendance", icon: ClipboardCheck, path: "/student/attendance" },
+                { label: "Homework", icon: BookOpen, path: "/student/homework" },
+                { label: "Achievements", icon: Trophy, path: "/student/achievements" },
+                { label: "Syllabus", icon: FileText, path: "/student/syllabus" },
+                { label: "Performance", icon: BarChart3, path: "/student/performance" },
+                { label: "Leave", icon: CalendarOff, path: "/student/leave" },
+              ],
+            }
+          ] : navSections).map((section) => {
             const visibleItems = section.items.filter(
               (item) => !item.roles || item.roles.includes(role)
             );
@@ -126,7 +196,12 @@ export default function AppLayout({ children }) {
                         {({ isActive }) => (
                           <>
                             <Icon size={16} className={isActive ? "text-blue-600" : "text-gray-400"} />
-                            <span>{item.label}</span>
+                            <span className="flex-1 text-left">{item.label}</span>
+                            {item.path.includes('mailbox') && unreadMailCount > 0 && (
+                              <span className="bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
+                                {unreadMailCount}
+                              </span>
+                            )}
                           </>
                         )}
                       </NavLink>
@@ -184,7 +259,16 @@ export default function AppLayout({ children }) {
 
       {/* Top bar */}
       <header className="fixed left-[240px] top-0 right-0 h-[56px] bg-white border-b border-gray-100 flex items-center px-6 z-20">
-        <div className="flex-1" />
+        <div className="flex-1 flex items-center gap-4">
+          {activeYear ? (
+            <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 border border-blue-100 rounded-full text-blue-700 text-xs font-semibold">
+              <CalendarDays size={14} />
+              Session: {activeYear.name}
+            </div>
+          ) : !yearLoading ? (
+            <div className="text-xs text-red-500 font-medium">No active academic year</div>
+          ) : null}
+        </div>
         <NotificationBell />
       </header>
 

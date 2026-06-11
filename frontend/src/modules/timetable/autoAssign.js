@@ -1,8 +1,6 @@
 import {
   SUBJECT_MAX_PERIODS,
   SUBJECT_MAX_PER_DAY,
-  getSubjectAvailability,
-  getUsedPeriodsForSubject,
 } from "./rules";
 import {
   getSubjectsForClass,
@@ -61,10 +59,8 @@ export const autoAssignForClass = ({
   };
 
   const canAssignInNext = (subjectName) => {
-    const available = getSubjectAvailability(subjectsData, subjectName);
-    const usedGlobal = getUsedPeriodsForSubject(gridsByClass, subjectName);
     const usedClass = getUsedInNext(subjectName);
-    return usedGlobal < available && usedClass < SUBJECT_MAX_PERIODS;
+    return usedClass < SUBJECT_MAX_PERIODS;
   };
 
   const canAssignInNextDay = (subjectName, dayIndex) => {
@@ -93,12 +89,8 @@ export const autoAssignForClass = ({
       const candidates = subjects
         .filter((name) => canAssignInNext(name) && canAssignInNextDay(name, di))
         .sort((a, b) => {
-          const aRemaining =
-            getSubjectAvailability(subjectsData, a) -
-            getUsedPeriodsForSubject(gridsByClass, a);
-          const bRemaining =
-            getSubjectAvailability(subjectsData, b) -
-            getUsedPeriodsForSubject(gridsByClass, b);
+          const aRemaining = SUBJECT_MAX_PERIODS - getUsedInNext(a);
+          const bRemaining = SUBJECT_MAX_PERIODS - getUsedInNext(b);
           if (aRemaining !== bRemaining) return bRemaining - aRemaining;
           return a.localeCompare(b);
         });

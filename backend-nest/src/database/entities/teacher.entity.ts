@@ -4,10 +4,20 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
+import { SubjectEntity } from './subject.entity';
 
 @Entity('teachers')
 export class TeacherEntity {
+  @ManyToOne(() => SubjectEntity, (subject) => subject.teachers, { eager: true, nullable: true })
+  @JoinColumn({ name: 'subject_id' })
+  subject: SubjectEntity;
+
+  @Column({ name: 'subject_id', nullable: true })
+  subjectId: string;
+
   @PrimaryColumn({ length: 20 })
   id: string;
 
@@ -46,6 +56,12 @@ export class TeacherEntity {
 
   @Column({ name: 'school_id', default: 'school_001', length: 50 })
   schoolId: string;
+
+  @Column({ name: 'is_class_teacher', default: false })
+  isClassTeacher: boolean;
+
+  @Column({ name: 'class_teacher_class_id', nullable: true, length: 50 })
+  classTeacherClassId: string;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

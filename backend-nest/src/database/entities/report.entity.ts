@@ -10,6 +10,9 @@ export class ReportEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ name: 'academic_year_id', nullable: true })
+  academicYearId: number;
+
   @Column({ length: 255 })
   title: string;
 

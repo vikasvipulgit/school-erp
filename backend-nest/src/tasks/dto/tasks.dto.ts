@@ -11,6 +11,7 @@ export class CreateTaskDto {
   @ApiProperty({ required: false }) @IsString() @IsOptional() remarks?: string;
   @ApiProperty({ required: false }) @IsString() @IsOptional() createdByName?: string;
   @ApiProperty({ type: [String] }) @IsArray() assignedTo: string[];
+  @ApiProperty({ required: false }) @IsString() @IsOptional() fileUrl?: string;
 }
 
 export class UpdateTaskDto {
@@ -21,7 +22,9 @@ export class UpdateTaskDto {
   @ApiProperty({ required: false }) @IsString() @IsOptional() startDate?: string;
   @ApiProperty({ required: false }) @IsString() @IsOptional() dueDate?: string;
   @ApiProperty({ required: false }) @IsString() @IsOptional() remarks?: string;
+  @ApiProperty({ required: false }) @IsString() @IsOptional() fileUrl?: string;
 }
+
 
 export class UpdateAssignmentStatusDto {
   @ApiProperty({ enum: TaskAssignmentStatus })

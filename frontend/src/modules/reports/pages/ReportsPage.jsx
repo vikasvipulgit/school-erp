@@ -1,11 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { BarChart3, Users, BookOpen, CalendarOff, ClipboardList } from 'lucide-react';
-import { getAllAssignmentsWithTasks } from '@/modules/tasks/services/tasksFirebaseService';
-import { getLeaveApplications } from '@/modules/leave/services/leaveFirebaseService';
+import { BarChart3, Users, BookOpen, CalendarOff, ClipboardList, Clock, AlertCircle } from 'lucide-react';
+import { getAllAssignmentsWithTasks } from '@/modules/tasks/services/tasksService';
+import { getLeaveApplications } from '@/modules/leave/services/leaveService';
+import { 
+  fetchSubstitutionReport, 
+  fetchPendingTasksReport, 
+  fetchOverdueTasksReport 
+} from '@/modules/reports/services/reportsService';
 import { useAuth } from '@/core/context/AuthContext';
 import { Navigate } from 'react-router-dom';
-import teachersData from '@/data/teachers.json';
-import classesData from '@/data/classes.json';
+import { useTeachers } from '@/core/hooks/useTeachers';
+import { useClasses } from '@/core/context/ClassesContext';
 import { days } from '@/modules/timetable/pages/TimetablePage';
 import { getPeriodsFromSlots } from '@/modules/timetable/periodUtils';
 
@@ -14,10 +19,14 @@ const REPORT_TABS = [
   { id: 'class_timetable', label: 'Class Timetable', icon: BookOpen },
   { id: 'leave_summary', label: 'Leave Summary', icon: CalendarOff },
   { id: 'task_summary', label: 'Task Summary', icon: ClipboardList },
+  { id: 'substitution', label: 'Substitution Report', icon: ClipboardList },
+  { id: 'pending_tasks', label: 'Pending Tasks', icon: Clock },
+  { id: 'overdue_tasks', label: 'Overdue Tasks', icon: AlertCircle },
   { id: 'workload', label: 'Workload Report', icon: BarChart3 },
 ];
 
 function TeacherTimetableReport({ periods }) {
+  const { teachers } = useTeachers();
   const [selectedTeacher, setSelectedTeacher] = useState('');
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem('erp_timetable') || '{}'); } catch {}
@@ -48,7 +57,7 @@ function TeacherTimetableReport({ periods }) {
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
           >
             <option value="">-- Choose Teacher --</option>
-            {teachersData.map((t) => (
+            {teachers.map((t) => (
               <option key={t.id} value={t.name}>{t.name} ({t.subject})</option>
             ))}
           </select>
@@ -97,9 +106,7 @@ function TeacherTimetableReport({ periods }) {
 }
 
 function ClassTimetableReport({ periods }) {
-  const classOptions = classesData.flatMap((c) =>
-    c.sections.map((s) => ({ value: `${c.class}-${s}`, label: `${c.class} - ${s}` }))
-  );
+  const { classOptions } = useClasses();
   const [selectedClass, setSelectedClass] = useState('');
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem('erp_timetable') || '{}'); } catch {}
@@ -158,6 +165,7 @@ function ClassTimetableReport({ periods }) {
 }
 
 function LeaveSummaryReport({ leaves }) {
+  const { teachers } = useTeachers();
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200">
       <table className="w-full text-sm">
@@ -170,7 +178,7 @@ function LeaveSummaryReport({ leaves }) {
         </thead>
         <tbody className="divide-y divide-gray-100">
           {leaves.map((l) => {
-            const teacher = teachersData.find((t) => t.id === l.teacherId);
+            const teacher = teachers.find((t) => t.id === l.teacherId);
             const statusCls = { pending: 'bg-yellow-100 text-yellow-700', approved: 'bg-green-100 text-green-700', rejected: 'bg-red-100 text-red-700' };
             return (
               <tr key={l.id} className="hover:bg-gray-50">
@@ -197,6 +205,7 @@ function LeaveSummaryReport({ leaves }) {
 }
 
 function TaskSummaryReport({ assignments }) {
+  const { teachers } = useTeachers();
   const STATUS_CLS = {
     not_started: 'bg-gray-100 text-gray-600',
     in_progress: 'bg-blue-100 text-blue-700',
@@ -217,7 +226,7 @@ function TaskSummaryReport({ assignments }) {
         </thead>
         <tbody className="divide-y divide-gray-100">
           {assignments.map((a) => {
-            const teacher = teachersData.find((t) => t.id === a.teacherId);
+            const teacher = teachers.find((t) => t.id === a.teacherId);
             const due = a.task?.dueDate?.toDate ? a.task.dueDate.toDate() : a.task?.dueDate ? new Date(a.task.dueDate) : null;
             const prioCls = { high: 'bg-red-100 text-red-700', medium: 'bg-yellow-100 text-yellow-700', low: 'bg-green-100 text-green-700' };
             return (
@@ -247,11 +256,174 @@ function TaskSummaryReport({ assignments }) {
   );
 }
 
+function SubstitutionReport() {
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetchSubstitutionReport(date);
+      setData(res);
+    } catch (err) {
+      console.error(err);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [date]);
+
+  return (
+    <div>
+      <div className="mb-4">
+        <label className="block text-xs font-medium text-gray-600 mb-1">Filter by Date</label>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+        />
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50">
+              {['Date', 'Class', 'Subject', 'Original Teacher', 'Proxy Teacher'].map((h) => (
+                <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {loading ? (
+              <tr><td colSpan={5} className="py-10 text-center"><div className="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></td></tr>
+            ) : data.map((row, i) => (
+              <tr key={i} className="hover:bg-gray-50">
+                <td className="px-4 py-3 text-gray-600">{row.date}</td>
+                <td className="px-4 py-3 font-medium text-gray-900">{row.class_name}</td>
+                <td className="px-4 py-3 text-gray-600">{row.subject_name}</td>
+                <td className="px-4 py-3 text-gray-600">{row.original_teacher}</td>
+                <td className="px-4 py-3 text-emerald-600 font-medium">{row.proxy_teacher}</td>
+              </tr>
+            ))}
+            {!loading && data.length === 0 && (
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No substitutions found for this date</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PendingTasksReport() {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetchPendingTasksReport();
+        setData(res);
+      } catch {}
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-gray-200">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-gray-50">
+            {['Task Title', 'Teacher', 'Priority', 'Due Date', 'Status'].map((h) => (
+              <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {loading ? (
+            <tr><td colSpan={5} className="py-10 text-center"><div className="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></td></tr>
+          ) : data.map((row, i) => (
+            <tr key={i} className="hover:bg-gray-50">
+              <td className="px-4 py-3 font-medium text-gray-900">{row.task_title}</td>
+              <td className="px-4 py-3 text-gray-600">{row.teacher}</td>
+              <td className="px-4 py-3 text-xs capitalize">
+                <span className={`px-2 py-0.5 rounded ${row.priority === 'high' ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-600'}`}>
+                  {row.priority}
+                </span>
+              </td>
+              <td className="px-4 py-3 text-gray-600">{row.due_date ? new Date(row.due_date).toLocaleDateString() : '—'}</td>
+              <td className="px-4 py-3">
+                <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-medium capitalize">
+                  {row.status?.replace('_', ' ')}
+                </span>
+              </td>
+            </tr>
+          ))}
+          {!loading && data.length === 0 && (
+            <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No pending tasks found</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function OverdueTasksReport() {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetchOverdueTasksReport();
+        setData(res);
+      } catch {}
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-gray-200">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-gray-50">
+            {['Task Title', 'Teacher', 'Due Date', 'Days Overdue'].map((h) => (
+              <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {loading ? (
+            <tr><td colSpan={4} className="py-10 text-center"><div className="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></td></tr>
+          ) : data.map((row, i) => (
+            <tr key={i} className="hover:bg-gray-50">
+              <td className="px-4 py-3 font-medium text-gray-900">{row.task_title}</td>
+              <td className="px-4 py-3 text-gray-600">{row.teacher}</td>
+              <td className="px-4 py-3 text-gray-600">{row.due_date ? new Date(row.due_date).toLocaleDateString() : '—'}</td>
+              <td className="px-4 py-3">
+                <span className="text-red-600 font-bold">{row.days_overdue} days</span>
+              </td>
+            </tr>
+          ))}
+          {!loading && data.length === 0 && (
+            <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">No overdue tasks found</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function WorkloadReport({ periods }) {
+  const { teachers } = useTeachers();
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem('erp_timetable') || '{}'); } catch {}
 
-  const workload = teachersData.map((t) => {
+  const workload = teachers.map((t) => {
     let total = 0;
     const byDay = {};
     days.forEach((d) => { byDay[d] = 0; });
@@ -369,6 +541,9 @@ export default function ReportsPage() {
             {activeTab === 'class_timetable' && <ClassTimetableReport periods={periods} />}
             {activeTab === 'leave_summary' && <LeaveSummaryReport leaves={leaves} />}
             {activeTab === 'task_summary' && <TaskSummaryReport assignments={assignments} />}
+            {activeTab === 'substitution' && <SubstitutionReport />}
+            {activeTab === 'pending_tasks' && <PendingTasksReport />}
+            {activeTab === 'overdue_tasks' && <OverdueTasksReport />}
             {activeTab === 'workload' && <WorkloadReport periods={periods} />}
           </>
         )}

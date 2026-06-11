@@ -13,7 +13,8 @@ import { getTimetableRules, saveTimetableRules, DEFAULT_RULES } from "@/modules/
 import {
   loadTimetableSettings,
   saveTimetableSettings,
-} from "@/modules/timetable/services/timetableFirebaseService";
+} from "@/modules/timetable/services/timetableService";
+import { saveWorkingDays } from "@/modules/timetable/periodUtils";
 
 const SLOTS_KEY = "erp_period_slots";
 
@@ -42,6 +43,7 @@ export default function OrganizationSettingsPage() {
         }
         if (Array.isArray(s.workingDays) && s.workingDays.length) {
           setSelectedDays(s.workingDays);
+          saveWorkingDays(s.workingDays);
         }
         if (s.rules && Object.keys(s.rules).length) {
           const merged = { ...DEFAULT_RULES, ...s.rules };
@@ -58,6 +60,7 @@ export default function OrganizationSettingsPage() {
     try {
       const rawSlots = JSON.parse(localStorage.getItem(SLOTS_KEY) || "[]");
       saveTimetableRules(rules); // keep localStorage in sync too
+      saveWorkingDays(selectedDays);
       await saveTimetableSettings(rawSlots, selectedDays, rules);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
