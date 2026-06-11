@@ -2,12 +2,12 @@ import { initializeApp } from "firebase/app";
 import { getMessaging, onMessage, getToken } from "firebase/messaging";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyC3sYUrcn00e64fzcWhmRns84jlxYFQBBs",
-  authDomain: "schoolerp-23c97.firebaseapp.com",
-  projectId: "schoolerp-23c97",
-  storageBucket: "schoolerp-23c97.firebasestorage.app",
-  messagingSenderId: "1078063841691",
-  appId: "1:1078063841691:web:5e93770bc8d4153eabe13e"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 // Initialize Firebase

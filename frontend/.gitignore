@@ -24,6 +24,9 @@ pnpm-debug.log*
 # Test and coverage output
 coverage/
 
+# Generated Firebase service worker (built from src/firebase-messaging-sw.template.js)
+public/firebase-messaging-sw.js
+
 # Editor and OS files
 .DS_Store
 Thumbs.db

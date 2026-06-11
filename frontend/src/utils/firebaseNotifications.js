@@ -2,7 +2,7 @@ import { messaging, getToken, onMessage } from "../firebase/firebase";
 import { apiRequest } from "@/core/api/client";
 import { toast } from "sonner";
 
-const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || "BEng2ZlFVgB0s_oy3JVAK7wIUEzJ-hLlGuR5W95F0TcmX1XuUOz5xmNu2kR7xG9AzxcvZqxt1B7W8J6y1PQtojY";
+const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
 
 // Deduplication cache
 const processedNotifications = new Set();
